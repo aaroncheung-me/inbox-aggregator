@@ -65,7 +65,21 @@ async function applyLabelUpdates(accountId, labelUpdates) {
 // Pulls everything new for one account, saves it, embeds it, and records
 // the new sync position. The position is saved last, so a failure partway
 // through just means the next sync redoes the same work.
-async function syncAccount(account) {
+// accountId -> the sync already running for it
+const syncsInFlight = new Map();
+
+// If this account is already syncing (e.g. the background sync and "Sync now"
+// at the same moment), waits for that run instead of fetching and embedding
+// the same mail twice.
+function syncAccount(account) {
+  if (!syncsInFlight.has(account.id)) {
+    const run = runSync(account).finally(() => syncsInFlight.delete(account.id));
+    syncsInFlight.set(account.id, run);
+  }
+  return syncsInFlight.get(account.id);
+}
+
+async function runSync(account) {
   const connector = connectorFor(account.provider);
   const credentials = await getCredentials(account);
 

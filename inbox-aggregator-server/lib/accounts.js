@@ -79,6 +79,13 @@ async function listAccounts(userId) {
   return data;
 }
 
+// Every user's accounts, for the background sync.
+async function listAllAccounts() {
+  const { data, error } = await supabase.from('accounts').select(ACCOUNT_COLUMNS).order('id');
+  if (error) throw error;
+  return data;
+}
+
 // Returns null if the account doesn't exist or belongs to someone else.
 async function getAccount(userId, accountId) {
   const { data, error } = await supabase
@@ -118,6 +125,7 @@ async function saveSyncState(accountId, syncState) {
 
 module.exports = {
   listAccounts,
+  listAllAccounts,
   getAccount,
   getCredentials,
   saveSyncState,

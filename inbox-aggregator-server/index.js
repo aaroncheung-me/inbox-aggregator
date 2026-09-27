@@ -1,11 +1,12 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const Anthropic = require('@anthropic-ai/sdk');
 
 const supabase = require('./lib/supabase');
 const { getKey } = require('./lib/crypto');
-const { listAccounts, getAccount, saveConnectedAccount, updateAccountSettings } = require('./lib/accounts');
+const { listAccounts, listAllAccounts, getAccount, saveConnectedAccount, updateAccountSettings } = require('./lib/accounts');
 const { embedPending } = require('./lib/embeddings');
 const { keywordSearch, parseSearchQuery } = require('./lib/search');
 const { askAssistant } = require('./lib/assistant');
@@ -45,6 +46,59 @@ function redirectToApp(res, params) {
 // for the host's health checks: answers as soon as the server is up
 app.get('/health', (req, res) => {
   res.send('ok');
+});
+
+// ---------- background sync (called by a scheduler such as cron-job.org) ----------
+
+// Protected by CRON_SECRET, sent in an "X-Cron-Secret" header; with no
+// CRON_SECRET set, every call is refused. Replies straight away, since
+// schedulers give up after ~30 seconds, then syncs every account in the
+// background. Also keeps a free server from going to sleep.
+let backgroundSyncRunning = false;
+
+function cronSecretMatches(given) {
+  const expected = process.env.CRON_SECRET;
+  if (!expected || typeof given !== 'string') return false;
+  // comparing fixed-length hashes takes the same time however much of the secret is right
+  const hash = value => crypto.createHash('sha256').update(value).digest();
+  return crypto.timingSafeEqual(hash(given), hash(expected));
+}
+
+async function runBackgroundSync() {
+  const accounts = await listAllAccounts();
+  let saved = 0;
+  let embedded = 0;
+  const failed = [];
+
+  for (const account of accounts) {
+    try {
+      const result = await syncAccount(account);
+      saved += result.saved;
+      embedded += result.embedded;
+    } catch (err) {
+      failed.push(account.email_address);
+      console.error(`Background sync failed for account ${account.id} (${account.email_address}):`, err.message);
+    }
+  }
+
+  // quiet runs aren't logged, so the log shows only runs where something happened
+  if (saved || failed.length) {
+    console.log(`Background sync: ${saved} new messages, ${embedded} embedded` +
+      (failed.length ? `, failed: ${failed.join(', ')}` : ''));
+  }
+}
+
+app.post('/cron/sync', (req, res) => {
+  if (!cronSecretMatches(req.get('x-cron-secret'))) return res.status(401).send('Unauthorized');
+  // still a success for the scheduler: the previous run is doing the work
+  if (backgroundSyncRunning) return res.status(202).json({ started: false, reason: 'previous run still going' });
+
+  backgroundSyncRunning = true;
+  res.status(202).json({ started: true });
+
+  runBackgroundSync()
+    .catch(err => console.error('Background sync failed:', err))
+    .finally(() => { backgroundSyncRunning = false; });
 });
 
 // Google sends the browser here after sign-in, without the app's login, so the
