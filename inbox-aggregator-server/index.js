@@ -42,6 +42,11 @@ function redirectToApp(res, params) {
 
 // ---------- public routes (no sign-in) ----------
 
+// for the host's health checks: answers as soon as the server is up
+app.get('/health', (req, res) => {
+  res.send('ok');
+});
+
 // Google sends the browser here after sign-in, without the app's login, so the
 // user comes from the signed `state` made in POST /connect/gmail. This exact
 // URL is registered in Google Cloud as the redirect URI, so it can't be renamed.
