@@ -1,0 +1,29 @@
+{
+  "name": "inbox-aggregator-server",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "@supabase/supabase-js": "^2.117.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.3",
+    "express": "^5.2.1",
+    "googleapis": "^181.0.0",
+    "html-to-text": "^10.0.1",
+    "imapflow": "^2.0.6",
+    "mailparser": "^3.9.28",
+    "openai": "^7.23.0",
+    "unpdf": "^1.8.1"
+  }
+}

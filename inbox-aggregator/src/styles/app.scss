@@ -1,0 +1,1070 @@
+// ---------- design tokens ----------
+$bg: #FAFAF8;
+$surface: #FFFFFF;
+$border: #E4E1DA;
+$text-primary: #1A1A1A;
+$text-secondary: #6B6B63;
+$accent: #3B4A5A;
+$accent-hover: #2C3944;
+$accent-soft: #EDF1F4;
+$danger: #B3401F;
+
+$font-ui: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+$font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+
+$space-1: 4px;
+$space-2: 8px;
+$space-3: 12px;
+$space-4: 16px;
+$space-6: 24px;
+$space-8: 32px;
+
+// ---------- reset ----------
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: $font-ui;
+  color: $text-primary;
+  background: $bg;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+// ---------- layout ----------
+.app {
+  display: flex;
+  height: 100vh;
+  height: 100dvh; // the visible height on phones, excluding browser bars; 100vh is the fallback
+  overflow: hidden;
+  // keeps content clear of the iPhone notch and home bar (0 everywhere else)
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+// shown only in the phone layout (see the media query at the end)
+.phone-only {
+  display: none;
+}
+
+.sidebar {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: $surface;
+  border-right: 1px solid $border;
+}
+
+.sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.main-pane {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: $space-8 $space-6;
+}
+
+// ---------- ask bar (sticky, top of sidebar) ----------
+.ask-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+  padding: $space-3 $space-4 $space-4;
+  border-bottom: 1px solid $border;
+}
+
+.mode-toggle {
+  display: flex;
+  gap: 2px;
+  align-self: flex-start;
+  padding: 2px;
+  border-radius: 6px;
+  background: $accent-soft;
+
+  button {
+    border: none;
+    background: none;
+    padding: 2px $space-3;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: $text-secondary;
+
+    &.active {
+      background: $surface;
+      color: $text-primary;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    }
+  }
+}
+
+.ask-bar-row {
+  display: flex;
+  gap: $space-2;
+
+  input {
+    min-width: 0;
+    flex: 1;
+    font-family: inherit;
+    font-size: 14px;
+    padding: $space-2 $space-3;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $bg;
+    color: $text-primary;
+
+    &:focus {
+      outline: none;
+      border-color: $accent;
+    }
+  }
+}
+
+// ---------- buttons ----------
+.btn {
+  background: $accent;
+  color: #fff;
+  border: none;
+  padding: $space-2 $space-3;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: $accent-hover;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid $border;
+  color: $text-primary;
+
+  &:hover:not(:disabled) {
+    background: $accent-soft;
+  }
+}
+
+.btn-small {
+  padding: $space-1 $space-2;
+  font-size: 12px;
+}
+
+.load-more {
+  display: block;
+  width: calc(100% - #{$space-4 * 2});
+  margin: $space-3 $space-4;
+}
+
+// ---------- sync status ----------
+.sync-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: $space-3 $space-4;
+  border-bottom: 1px solid $border;
+  background: $accent-soft;
+  font-size: 12px;
+  color: $text-secondary;
+}
+
+// ---------- accounts panel ----------
+.accounts-panel {
+  border-bottom: 1px solid $border;
+  font-size: 12px;
+}
+
+.accounts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: $space-2 $space-4;
+}
+
+.accounts-heading {
+  display: flex;
+  align-items: center;
+  gap: $space-1;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.accounts-chevron {
+  width: 12px;
+  color: $text-secondary;
+}
+
+.accounts-summary {
+  font-weight: 400;
+  color: $text-secondary;
+}
+
+.accounts-empty {
+  margin: 0;
+  padding: 0 $space-4 $space-3;
+  color: $text-secondary;
+}
+
+.accounts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 $space-2;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-1 $space-4;
+
+  &:hover {
+    background: $accent-soft;
+  }
+
+  input[type='checkbox'] {
+    margin: 0;
+    accent-color: $accent;
+    cursor: pointer;
+  }
+
+  &.hidden-account .account-name {
+    color: $text-secondary;
+    text-decoration: line-through;
+  }
+}
+
+.account-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.account-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+// ---------- account color picker ----------
+.color-picker {
+  position: relative;
+  display: flex;
+}
+
+.account-dot-button {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+
+  &:hover,
+  &:focus-visible {
+    outline: 2px solid $accent;
+    outline-offset: 1px;
+  }
+}
+
+.color-picker-popover {
+  position: absolute;
+  top: calc(100% + #{$space-1});
+  left: -$space-2;
+  z-index: 10;
+  padding: $space-2;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.color-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 24px);
+  gap: $space-2;
+}
+
+.color-swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 50%;
+
+  &:hover,
+  &:focus-visible {
+    outline: 2px solid $border;
+    outline-offset: 1px;
+  }
+
+  &.selected {
+    outline: 2px solid $accent;
+    outline-offset: 1px;
+  }
+}
+
+.color-custom {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  margin-top: $space-2;
+  padding-top: $space-2;
+  border-top: 1px solid $border;
+  font-size: 12px;
+  color: $text-secondary;
+  cursor: pointer;
+  white-space: nowrap;
+
+  input[type='color'] {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+  }
+}
+
+// ---------- add account menu ----------
+.add-account {
+  position: relative;
+}
+
+.add-account-menu {
+  position: absolute;
+  top: calc(100% + #{$space-1});
+  right: 0;
+  z-index: 10;
+  min-width: 200px;
+  padding: $space-1;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.add-account-option {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: $space-2 $space-3;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  text-align: left;
+  text-decoration: none;
+  color: $text-primary;
+
+  &:hover,
+  &:focus-visible {
+    background: $accent-soft;
+    outline: none;
+  }
+}
+
+.add-account-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.add-account-hint {
+  font-size: 11px;
+  color: $text-secondary;
+}
+
+.add-account-error {
+  margin: $space-1 $space-3 $space-2;
+  font-size: 11px;
+  color: $danger;
+}
+
+// ---------- sidebar footer ----------
+.sidebar-footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-3 $space-4;
+  border-top: 1px solid $border;
+  font-size: 12px;
+  color: $text-secondary;
+}
+
+.signed-in-as {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ---------- login ----------
+.login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: $space-4;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  padding: $space-8 $space-6;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 8px;
+
+  h1 {
+    margin: 0 0 $space-2;
+    font-size: 22px;
+  }
+
+  p {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+}
+
+.login-hint {
+  margin: 0 0 $space-4;
+  color: $text-secondary;
+}
+
+.login-submit {
+  width: 100%;
+  padding: $space-2 $space-3;
+}
+
+// ---------- connect dialog ----------
+.connect-dialog {
+  width: min(420px, calc(100vw - #{$space-8}));
+  padding: $space-6;
+  border: 1px solid $border;
+  border-radius: 8px;
+  background: $surface;
+  color: $text-primary;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+
+  &::backdrop {
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  h2 {
+    margin: 0 0 $space-1;
+    font-size: 18px;
+  }
+}
+
+.dialog-hint {
+  margin: 0 0 $space-4;
+  font-size: 12px;
+  line-height: 1.5;
+  color: $text-secondary;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+  margin-bottom: $space-3;
+  font-size: 12px;
+  font-weight: 500;
+
+  input {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 400;
+    padding: $space-2 $space-3;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $bg;
+    color: $text-primary;
+
+    &:focus {
+      outline: none;
+      border-color: $accent;
+    }
+  }
+}
+
+.server-settings {
+  margin-bottom: $space-3;
+  font-size: 12px;
+
+  summary {
+    cursor: pointer;
+    color: $text-secondary;
+    margin-bottom: $space-2;
+  }
+}
+
+.server-settings-fields {
+  display: flex;
+  gap: $space-2;
+
+  .field {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .field-port {
+    flex: 0 0 80px;
+  }
+}
+
+.form-error {
+  margin: 0 0 $space-3;
+  font-size: 12px;
+  color: $danger;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: $space-2;
+}
+
+// ---------- notice (below sync status) ----------
+.notice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-2 $space-4;
+  border-bottom: 1px solid $border;
+  font-size: 12px;
+}
+
+.notice-success {
+  background: $surface;
+  color: $text-primary;
+}
+
+.notice-error {
+  background: rgba($danger, 0.08);
+  color: $danger;
+}
+
+.notice-dismiss {
+  background: none;
+  border: none;
+  padding: 0 $space-1;
+  font-size: 16px;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.6;
+
+  &:hover {
+    opacity: 1;
+  }
+}
+
+// ---------- search results header ----------
+.search-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-2 $space-4;
+  border-bottom: 1px solid $border;
+  font-size: 12px;
+  color: $text-secondary;
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.search-empty {
+  margin: 0;
+  padding: $space-4;
+  font-size: 13px;
+  color: $text-secondary;
+}
+
+// ---------- message list ----------
+.message-list-item {
+  padding: $space-3 $space-4;
+  border-bottom: 1px solid $border;
+  cursor: pointer;
+  // stripe in the color of the account that received it (set inline per item)
+  box-shadow: inset 4px 0 0 var(--account-color, transparent);
+
+  &:hover {
+    background: $accent-soft;
+  }
+
+  &.selected {
+    background: $accent-soft;
+  }
+}
+
+.message-list-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 2px;
+}
+
+.sender {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.date {
+  font-family: $font-mono;
+  font-size: 11px;
+  color: $text-secondary;
+  flex-shrink: 0;
+  margin-left: $space-2;
+}
+
+.subject {
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.snippet {
+  font-size: 12px;
+  color: $text-secondary;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// ---------- chat panel ----------
+.chat-panel {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.chat-empty {
+  color: $text-secondary;
+
+  .chat-example {
+    font-style: italic;
+    margin: $space-2 0 0;
+  }
+
+  .chat-tip {
+    margin-top: $space-6;
+    font-size: 13px;
+  }
+}
+
+.chat-exchange {
+  margin-bottom: $space-8;
+}
+
+.chat-question {
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: $space-2;
+  color: $accent;
+}
+
+.chat-answer {
+  line-height: 1.6;
+  margin-bottom: $space-3;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+// numbered citation inside an answer; opens the email
+.citation {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin: 0 2px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 9px;
+  background: $accent-soft;
+  color: $accent;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: text-top;
+
+  &:hover {
+    background: $accent;
+    color: #fff;
+  }
+}
+
+.chat-sources {
+  margin: 0 0 $space-3;
+  padding-left: $space-6;
+  font-size: 13px;
+
+  li {
+    margin-bottom: $space-1;
+    color: $text-secondary;
+  }
+}
+
+.source-link {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: $space-1 $space-2;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  text-align: left;
+  color: $text-primary;
+
+  &:hover {
+    background: $accent-soft;
+  }
+}
+
+.source-subject {
+  font-weight: 500;
+}
+
+.source-meta {
+  font-family: $font-mono;
+  font-size: 11px;
+  color: $text-secondary;
+}
+
+.chat-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: $space-3;
+  font-size: 12px;
+  color: $text-secondary;
+}
+
+.chat-steps {
+  summary {
+    cursor: pointer;
+  }
+
+  ol {
+    margin: $space-2 0 0;
+    padding-left: $space-6;
+    line-height: 1.6;
+  }
+}
+
+.chat-cost {
+  margin-left: auto;
+  font-family: $font-mono;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.back-link {
+  display: block;
+  max-width: 680px;
+  margin: 0 auto $space-4;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 13px;
+  color: $accent;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.chat-thinking {
+  color: $text-secondary;
+  font-style: italic;
+}
+
+.chat-error {
+  color: $danger;
+}
+
+// ---------- email detail ----------
+.email-detail {
+  max-width: 680px;
+  margin: 0 auto;
+
+  .received-by {
+    display: inline-flex;
+    align-items: center;
+    gap: $space-2;
+    margin-bottom: $space-3;
+    padding: 2px $space-2;
+    border: 1px solid $border;
+    border-radius: 999px;
+    font-size: 12px;
+    color: $text-secondary;
+  }
+
+  .subject {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: $space-1;
+  }
+
+  .meta {
+    font-family: $font-mono;
+    font-size: 12px;
+    color: $text-secondary;
+    margin-bottom: $space-6;
+  }
+
+  .attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $space-2;
+    list-style: none;
+    padding: 0;
+    margin: (-$space-3) 0 $space-6;
+
+    li {
+      font-family: $font-mono;
+      font-size: 12px;
+      padding: $space-1 $space-2;
+      border: 1px solid $border;
+      border-radius: 4px;
+      background: $surface;
+      color: $text-secondary;
+    }
+  }
+
+  .body {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.6;
+    font-size: 14px;
+  }
+}
+// ---------- phone layout ----------
+// Keep the width in sync with PHONE_LAYOUT in src/layout.js.
+@media (max-width: 767px) {
+  .phone-only {
+    display: block;
+  }
+
+  // "Accounts (3) ... Sync now", pinned below the list; its panel opens above it
+  .phone-bar {
+    flex-shrink: 0;
+    border-top: 1px solid $border;
+    background: $surface;
+
+    // near the bottom of the screen, so these open upward
+    .add-account-menu,
+    .color-picker-popover {
+      top: auto;
+      bottom: calc(100% + #{$space-1});
+    }
+  }
+
+  .phone-bar-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 48px;
+    padding: 0 $space-4;
+  }
+
+  .phone-bar-panel {
+    padding-top: $space-2;
+    border-bottom: 1px solid $border;
+    background: $bg;
+
+    // a long account list scrolls instead of pushing the inbox off screen
+    .accounts-list {
+      max-height: 40vh;
+      overflow-y: auto;
+      padding-bottom: $space-1;
+    }
+  }
+
+  .phone-bar-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: $space-2;
+    min-height: 48px;
+    padding: 0 $space-4;
+    border-top: 1px solid $border;
+    font-size: 13px;
+    color: $text-secondary;
+  }
+
+  // one screen at a time: the list, or the email/chat
+  .sidebar {
+    width: 100%;
+    border-right: none;
+  }
+
+  .app.phone-shows-list .main-pane {
+    display: none;
+  }
+
+  .app.phone-shows-main .sidebar {
+    display: none;
+  }
+
+  .main-pane {
+    padding: $space-2 $space-4 $space-6;
+  }
+
+  .phone-back {
+    min-height: 44px;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 15px;
+    color: $accent;
+  }
+
+  .phone-open-chat {
+    width: 100%;
+    min-height: 44px;
+    padding: $space-2 $space-4;
+    border: none;
+    border-bottom: 1px solid $border;
+    background: $accent-soft;
+    text-align: left;
+    font-size: 14px;
+    color: $accent;
+  }
+
+  .back-link {
+    min-height: 40px;
+    margin-bottom: $space-2;
+    font-size: 15px;
+  }
+
+  // iOS zooms the page when focusing a field with text under 16px
+  .ask-bar-row input,
+  .field input {
+    font-size: 16px;
+  }
+
+  // bigger tap targets (Apple suggests at least 44px)
+  .btn {
+    min-height: 40px;
+    font-size: 14px;
+  }
+
+  .btn-small {
+    min-height: 32px;
+    padding: $space-1 $space-3;
+    font-size: 13px;
+  }
+
+  .mode-toggle button {
+    padding: 6px 14px;
+    font-size: 13px;
+  }
+
+  .accounts-header {
+    min-height: 44px;
+  }
+
+  .accounts-heading {
+    font-size: 13px;
+  }
+
+  .account-row {
+    min-height: 44px;
+    padding: $space-1 $space-4;
+
+    input[type='checkbox'] {
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  .account-name {
+    font-size: 14px;
+  }
+
+  .account-dot-button {
+    width: 22px;
+    height: 22px;
+  }
+
+  .add-account-option {
+    min-height: 44px;
+  }
+
+  .message-list-item {
+    padding: 14px $space-4;
+  }
+
+  .sender,
+  .subject {
+    font-size: 14px;
+  }
+
+  .snippet {
+    font-size: 13px;
+  }
+
+  .email-detail {
+    .subject {
+      font-size: 20px;
+    }
+
+    .body {
+      font-size: 15px;
+    }
+  }
+
+  .chat-question {
+    font-size: 16px;
+  }
+
+  .chat-answer {
+    font-size: 15px;
+  }
+
+  .citation {
+    min-width: 22px;
+    height: 22px;
+    font-size: 12px;
+  }
+
+  .source-link {
+    min-height: 44px;
+  }
+
+  .login-screen {
+    padding: env(safe-area-inset-top) $space-4 env(safe-area-inset-bottom);
+  }
+}

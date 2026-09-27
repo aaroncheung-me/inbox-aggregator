@@ -1,0 +1,14 @@
+# secrets: keys live in .env files and in each host's settings, never in git
+.env
+.env.*
+*.local
+
+# installed packages and build output
+node_modules/
+dist/
+
+# local copies of old versions of files
+backups/
+
+*.log
+.DS_Store
