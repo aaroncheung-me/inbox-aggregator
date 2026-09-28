@@ -1,7 +1,20 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const supabase = require('./supabase');
-const { hybridSearch, keywordSearch, semanticSearch, emailKind } = require('./search');
+const { hybridSearch, keywordSearch, semanticSearch, emailKind, questionKeywords } = require('./search');
 const { readAttachment } = require('./attachments');
+const { listNotes } = require('./notes');
+const { validTimeZone, describeNow } = require('./time');
+const {
+  NOTE_WRITING_RULES,
+  NOTE_FIELDS,
+  SEARCH_NOTES_TOOL,
+  parseId,
+  firstLine,
+  searchNotes,
+  formatNotes,
+  runNoteSearch,
+  saveAiNote,
+} = require('./noteWriting');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -14,8 +27,9 @@ const PRICES = {
   'claude-opus-5': [5, 25],
 };
 
-const MAX_TOOL_CALLS = 6;
+const MAX_TOOL_CALLS = 8;
 const INITIAL_RESULTS = 8;
+const INITIAL_NOTES = 3; // notes matching the question's words, included up front
 const INITIAL_RESULTS_WITH_BODY = 3; // the top few include body text, so easy questions need no tool calls
 const EXCERPT_CHARS = 1500;
 const READ_EMAIL_CHARS = 5000;
@@ -68,13 +82,30 @@ const TOOLS = [
       required: ['attachment_id'],
     },
   },
+  SEARCH_NOTES_TOOL,
+  {
+    name: 'create_note',
+    description:
+      'Create a note for the user. Only when they ask you to note, save, write down, remember or remind them of ' +
+      'something. Call once per note.',
+    input_schema: {
+      type: 'object',
+      properties: NOTE_FIELDS,
+      required: ['text', 'remind_at', 'pin', 'email_ids', 'note_ids'],
+    },
+  },
 ];
 
-function systemPrompt() {
-  const today = new Date().toISOString().slice(0, 10);
-  return `You help the user find information in their own email. Today is ${today}.
+function systemPrompt(timeZone) {
+  return `You help the user with their own email and notes. It is now ${describeNow(timeZone)} in the user's time zone (${timeZone}).
 
 Each question comes with initial search results. If they answer it, answer right away without using tools. Otherwise use the tools: search again with different wording, likely senders or related businesses, open promising emails, and read attachments when the answer is probably inside a document. You can make at most ${MAX_TOOL_CALLS} tool calls.
+
+The user also keeps notes. Notes matching the question come with it when there are any, and search_notes finds others. Treat them like the user's own records.
+
+Only create a note when the user asks you to note, save, write down, remember or remind them of something. Then call create_note once for it, and afterwards tell them briefly what you saved rather than repeating the whole note. "This email" means the email they have open, if one is given. "Save that" (or similar) means write the note from your previous answer and link the emails it cited. Write notes following these rules:
+
+${NOTE_WRITING_RULES}
 
 Think about where the information would realistically be. For example, a glasses prescription might come from an optometrist, an eye clinic or an eyewear store, often as a PDF attachment, and never mention "glasses" in the subject.
 
@@ -82,8 +113,8 @@ Questions about the user's own things ("my headphones", "my order", "my appointm
 
 When you answer:
 - Be brief and direct.
-- Cite each email your answer relies on with its id in brackets, like [#123], right after the fact it supports.
-- Only state what the emails actually show. If you can't find it, say so and briefly say what you searched for.`;
+- Cite each email your answer relies on with its id in brackets, like [#123], and each note like [note 12], right after the fact it supports.
+- Only state what the emails and notes actually show. If you can't find it, say so and briefly say what you searched for.`;
 }
 
 // ---------- formatting results for Claude ----------
@@ -160,10 +191,12 @@ async function runTool(name, input, ctx) {
   }
 
   if (name === 'read_email') {
+    const emailId = parseId(input.email_id);
+    if (Number.isNaN(emailId)) return { content: 'No email with that id.', step: null, isError: true };
     const { data: m, error } = await supabase
       .from('messages')
       .select('id, account_id, sender, to_recipients, cc_recipients, subject, body, snippet, received_at')
-      .eq('id', input.email_id)
+      .eq('id', emailId)
       .maybeSingle();
     if (error) throw error;
     if (!m || !ctx.accountIds.includes(m.account_id)) return { content: 'No email with that id.', step: null, isError: true };
@@ -181,7 +214,8 @@ async function runTool(name, input, ctx) {
   }
 
   if (name === 'read_attachment') {
-    const file = await readAttachment(ctx.userId, input.attachment_id);
+    const attachmentId = parseId(input.attachment_id);
+    const file = Number.isNaN(attachmentId) ? null : await readAttachment(ctx.userId, attachmentId);
     if (!file) return { content: 'No attachment with that id.', step: null, isError: true };
 
     const label = `Attachment "${file.filename || 'unnamed'}"`;
@@ -210,66 +244,165 @@ async function runTool(name, input, ctx) {
     }
   }
 
+  if (name === 'search_notes') {
+    const content = runNoteSearch(ctx.notes, input.query, ctx.seenNotes);
+    const count = content === 'No matching notes.' ? 0 : content.split('\n').length;
+    return { content, step: `Searched your notes for "${input.query}": ${count} result${count === 1 ? '' : 's'}` };
+  }
+
+  if (name === 'create_note') {
+    if (!input.text?.trim()) return { content: 'The note needs some text.', step: null, isError: true };
+    const { id, messages } = await saveAiNote({
+      userId: ctx.userId,
+      decision: input,
+      fallbackText: input.text,
+      timeZone: ctx.timeZone,
+      seenEmailIds: ctx.seen,
+      seenNoteIds: ctx.seenNotes,
+    });
+    const title = firstLine(input.text);
+    ctx.created.push({ id, title });
+    return {
+      content: `Created note ${id}: "${title}".${messages.length ? ` ${messages.join(' ')}` : ''}`,
+      step: `Created note "${title}"`,
+    };
+  }
+
   return { content: `Unknown tool ${name}.`, step: null, isError: true };
 }
 
 // ---------- the answer loop ----------
 
-// Keeps only citations of emails Claude actually saw (so it can't point at
-// made-up ids), and returns them in order of first mention.
-async function collectSources(answer, seen, accountIds) {
-  const cited = [];
-  const cleaned = answer.replace(/\[#(\d+)\]/g, (marker, id) => {
-    const messageId = Number(id);
-    if (!seen.has(messageId)) return '';
-    if (!cited.includes(messageId)) cited.push(messageId);
+// Keeps only citations of emails and notes Claude actually saw (so it can't
+// point at made-up ids), and returns them in order of first mention as
+// sources: { kind: 'email', id, accountId, subject, sender, received_at, preview }
+//       or { kind: 'note', id, title }
+async function collectSources(answer, ctx) {
+  const cited = []; // [{ kind, id }]
+  const createdIds = new Set(ctx.created.map(note => note.id));
+  const cleaned = answer.replace(/\[(#|note )(\d+)\]/g, (marker, prefix, rawId) => {
+    const kind = prefix === '#' ? 'email' : 'note';
+    const id = Number(rawId);
+    const known = kind === 'email' ? ctx.seen.has(id) : ctx.seenNotes.has(id) || createdIds.has(id);
+    if (!known) return '';
+    if (!cited.some(c => c.kind === kind && c.id === id)) cited.push({ kind, id });
     return marker;
   });
   if (!cited.length) return { answer: cleaned, sources: [] };
 
-  const { data, error } = await supabase
-    .from('messages')
-    .select('id, account_id, subject, sender, received_at, snippet')
-    .in('id', cited)
-    .in('account_id', accountIds);
-  if (error) throw error;
+  const emailIds = cited.filter(c => c.kind === 'email').map(c => c.id);
+  const emailsById = new Map();
+  if (emailIds.length) {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id, account_id, subject, sender, received_at, snippet')
+      .in('id', emailIds)
+      .in('account_id', ctx.accountIds);
+    if (error) throw error;
+    for (const m of data) emailsById.set(m.id, m);
+  }
 
-  const byId = new Map(data.map(m => [m.id, m]));
-  const sources = cited.filter(id => byId.has(id)).map(id => {
-    const m = byId.get(id);
-    return {
-      id: m.id,
-      accountId: m.account_id,
-      subject: m.subject,
-      sender: m.sender,
-      received_at: m.received_at,
-      preview: (m.snippet || '').slice(0, 150),
-    };
-  });
+  const notesById = new Map(ctx.notes.map(note => [note.id, note]));
+  const sources = [];
+  for (const { kind, id } of cited) {
+    if (kind === 'email' && emailsById.has(id)) {
+      const m = emailsById.get(id);
+      sources.push({
+        kind,
+        id,
+        accountId: m.account_id,
+        subject: m.subject,
+        sender: m.sender,
+        received_at: m.received_at,
+        preview: (m.snippet || '').slice(0, 150),
+      });
+    } else if (kind === 'note') {
+      const note = notesById.get(id);
+      const created = ctx.created.find(c => c.id === id);
+      if (note || created) sources.push({ kind, id, title: note ? firstLine(note.body) : created.title });
+    }
+  }
   return { answer: cleaned, sources };
+}
+
+// Emails and notes cited in earlier answers can be linked by "save that as a
+// note", so they count as seen, once checked to be the user's.
+async function seedFromHistory(history, ctx) {
+  const emailIds = new Set();
+  const noteIds = new Set();
+  for (const turn of history) {
+    for (const [, prefix, id] of (turn.answer || '').matchAll(/\[(#|note )(\d+)\]/g)) {
+      (prefix === '#' ? emailIds : noteIds).add(Number(id));
+    }
+  }
+  if (emailIds.size) {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id')
+      .in('id', [...emailIds])
+      .in('account_id', ctx.accountIds);
+    if (error) throw error;
+    data.forEach(m => ctx.seen.add(m.id));
+  }
+  const ownNoteIds = new Set(ctx.notes.map(note => note.id));
+  noteIds.forEach(id => { if (ownNoteIds.has(id)) ctx.seenNotes.add(id); });
+}
+
+// The email the user has open, if it's theirs: "note this email" means this one.
+async function openEmailLine(messageId, ctx) {
+  if (!messageId) return '';
+  const { data: m, error } = await supabase
+    .from('messages')
+    .select('id, account_id, subject, sender, received_at')
+    .eq('id', messageId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!m || !ctx.accountIds.includes(m.account_id)) return '';
+  ctx.seen.add(m.id);
+  return `The user has this email open: [#${m.id}] ${m.received_at?.slice(0, 10) || ''} | From: ${m.sender} | Subject: ${m.subject || '(no subject)'}\n\n`;
 }
 
 // history: earlier exchanges in this chat, [{ question, answer }], oldest first.
 // ownAddresses: the user's connected email addresses, to spot emails they sent.
-async function askAssistant({ userId, accountIds, ownAddresses = [], question, history = [] }) {
-  const ctx = { userId, accountIds, ownAddresses, seen: new Set() };
+// openMessageId: the email open in the app, if any. timeZone: the user's, for reminders.
+// Returns { answer, sources, steps, createdNotes: [{ id, title }], usage }.
+async function askAssistant({ userId, accountIds, ownAddresses = [], question, history = [], openMessageId = null, timeZone }) {
+  const recentHistory = history.slice(-MAX_HISTORY_TURNS);
+  const ctx = {
+    userId,
+    accountIds,
+    ownAddresses,
+    timeZone: validTimeZone(timeZone),
+    seen: new Set(),      // email ids found or opened: only these can be cited or linked
+    seenNotes: new Set(), // likewise for notes
+    notes: await listNotes(userId),
+    created: [],          // notes made by create_note this turn
+  };
   const steps = [];
   const usage = { inputTokens: 0, outputTokens: 0 };
 
+  await seedFromHistory(recentHistory, ctx);
+  const openEmail = await openEmailLine(openMessageId, ctx);
+
   const initial = await hybridSearch(userId, accountIds, question, { limit: INITIAL_RESULTS, ownAddresses });
   initial.forEach(m => ctx.seen.add(m.id));
-  steps.push(`Searched for your question: ${initial.length} result${initial.length === 1 ? '' : 's'}`);
+  const initialNotes = searchNotes(ctx.notes, questionKeywords(question)).slice(0, INITIAL_NOTES);
+  initialNotes.forEach(note => ctx.seenNotes.add(note.id));
+  steps.push(`Searched for your question: ${initial.length} email${initial.length === 1 ? '' : 's'}` +
+    (initialNotes.length ? `, ${initialNotes.length} note${initialNotes.length === 1 ? '' : 's'}` : ''));
 
   const messages = [];
-  for (const turn of history.slice(-MAX_HISTORY_TURNS)) {
+  for (const turn of recentHistory) {
     messages.push({ role: 'user', content: turn.question });
     messages.push({ role: 'assistant', content: turn.answer || '(no answer)' });
   }
+  const emailResults = initial.length
+    ? await formatResults(initial, ownAddresses, INITIAL_RESULTS_WITH_BODY)
+    : '(no matching emails)';
+  const noteResults = initialNotes.length ? `\n\nNotes that may be relevant:\n${formatNotes(initialNotes)}` : '';
   messages.push({
     role: 'user',
-    content: `Question: ${question}\n\nInitial search results:\n\n${
-      initial.length ? await formatResults(initial, ownAddresses, INITIAL_RESULTS_WITH_BODY) : '(no matches)'
-    }`,
+    content: `${openEmail}Question: ${question}\n\nInitial search results:\n\n${emailResults}${noteResults}`,
   });
 
   let toolCalls = 0;
@@ -277,7 +410,7 @@ async function askAssistant({ userId, accountIds, ownAddresses = [], question, h
     const response = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 2048,
-      system: systemPrompt(),
+      system: systemPrompt(ctx.timeZone),
       tools: TOOLS,
       // once the limit is hit, the next reply has to be the answer
       ...(toolCalls >= MAX_TOOL_CALLS && { tool_choice: { type: 'none' } }),
@@ -289,12 +422,14 @@ async function askAssistant({ userId, accountIds, ownAddresses = [], question, h
     const toolUses = response.content.filter(block => block.type === 'tool_use');
     if (response.stop_reason !== 'tool_use' || !toolUses.length) {
       const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-      const { answer, sources } = await collectSources(text || "I couldn't come up with an answer to that.", ctx.seen, accountIds);
+      const fallback = ctx.created.length ? 'Done.' : "I couldn't come up with an answer to that.";
+      const { answer, sources } = await collectSources(text || fallback, ctx);
       const [inputPrice, outputPrice] = PRICES[MODEL] || [];
       return {
         answer,
         sources,
         steps,
+        createdNotes: ctx.created,
         usage: {
           model: MODEL,
           ...usage,
@@ -329,4 +464,8 @@ async function askAssistant({ userId, accountIds, ownAddresses = [], question, h
   }
 }
 
-module.exports = { askAssistant };
+// The email search and read tools are shared with AI save (lib/aiSave.js).
+const SEARCH_EMAILS_TOOL = TOOLS.find(tool => tool.name === 'search_emails');
+const READ_EMAIL_TOOL = TOOLS.find(tool => tool.name === 'read_email');
+
+module.exports = { askAssistant, SEARCH_EMAILS_TOOL, READ_EMAIL_TOOL, runTool, MODEL, PRICES };

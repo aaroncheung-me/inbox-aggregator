@@ -13,6 +13,28 @@ export function timeAgo(isoString) {
   return `synced ${days}d ago`;
 }
 
+// '"IBM Talent" <talent@ibm.com>' -> 'IBM Talent'; a bare address stays as it is.
+export function senderName(sender) {
+  if (!sender) return 'Unknown';
+  const match = sender.match(/^"?([^"<]+)"?\s*</);
+  return match ? match[1].trim() : sender;
+}
+
+// "3:05 PM" for today, "Jun 3" for this year, "Jun 3, 2025" for older.
+export function shortDate(isoString) {
+  if (!isoString) return '';
+  const date = new Date(isoString);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  return date.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  });
+}
+
 // "3", or "2 of 3 shown" when some accounts are unchecked
 export function accountsSummary(accounts) {
   const shownCount = accounts.filter(a => a.show_in_inbox).length;

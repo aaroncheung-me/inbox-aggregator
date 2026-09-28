@@ -5,14 +5,9 @@ import NoteComposer from './NoteComposer';
 // The notes stuck to an email, shown as sticky-note cards above it, plus
 // "+ Note" to write a new one. It's saved already stuck to this email, and can
 // get a reminder or other add-ons before saving.
-// onCreate(body, addons) saves the new note.
-function EmailStickyNotes({ messageId, notes, allNotes, now, onOpenNote, onCreate }) {
+// onCreate / onAiCreate(body, addons) save the new note (then it opens).
+function EmailStickyNotes({ messageId, notes, allNotes, now, onOpenNote, onCreate, onAiCreate }) {
   const [writing, setWriting] = useState(false);
-
-  async function handleSave(body, addons) {
-    await onCreate(body, addons, messageId);
-    setWriting(false);
-  }
 
   return (
     <div className="sticky-notes">
@@ -21,7 +16,7 @@ function EmailStickyNotes({ messageId, notes, allNotes, now, onOpenNote, onCreat
           <span className="sticky-note-title">{noteTitle(note.body)}</span>
           {note.reminder && (
             <span className={`mini-chip${reminderIsDue(note.reminder, now) ? ' due' : ''}${note.reminder.done_at ? ' done' : ''}`}>
-              ⏰ {formatReminder(note.reminder.remind_at)}
+              Remind: {formatReminder(note.reminder.remind_at)}
             </span>
           )}
         </button>
@@ -30,8 +25,9 @@ function EmailStickyNotes({ messageId, notes, allNotes, now, onOpenNote, onCreat
       {writing ? (
         <NoteComposer
           notes={allNotes}
-          fixedAddons={[{ addon: { kind: 'email_link', messageId }, label: '✉ This email' }]}
-          onSave={handleSave}
+          fixedAddons={[{ addon: { kind: 'email_link', messageId }, label: 'This email' }]}
+          onSave={onCreate}
+          onAiSave={onAiCreate}
           onCancel={() => setWriting(false)}
           placeholder="Note about this email..."
           className="sticky-note-form"

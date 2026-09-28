@@ -1,6 +1,6 @@
 import EmailStickyNotes from './EmailStickyNotes';
 
-function EmailDetail({ message, account, loading, error, now, allNotes, onOpenNote, onCreateNote }) {
+function EmailDetail({ message, account, loading, error, now, allNotes, onOpenNote, onCreateNote, onAiCreateNote }) {
   if (loading) return <div className="email-detail">Loading...</div>;
   if (error) return <div className="email-detail">Error: {error}</div>;
   if (!message) return null;
@@ -14,6 +14,7 @@ function EmailDetail({ message, account, loading, error, now, allNotes, onOpenNo
         now={now}
         onOpenNote={onOpenNote}
         onCreate={onCreateNote}
+        onAiCreate={onAiCreateNote}
       />
       {account && (
         <div className="received-by">

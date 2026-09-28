@@ -1,22 +1,29 @@
 import { useState } from 'react';
 import { formatReminder, noteTitle } from '../notes';
 import { EmailLinkPicker, NoteLinkPicker, ReminderPicker } from './NoteAddonPickers';
+import VoiceButton from './VoiceButton';
+import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
+import { transcribeRecording } from '../api';
 
-// Writing a new note: text plus any add-ons, all saved together with one Save.
+const KIND_ORDER = ['reminder', 'pin', 'email_link', 'note_link'];
+
+// Writing a new note: text plus any add-ons, all saved together.
 // Not a <form>: the email picker inside has its own search form, and forms can't nest.
 // Used by the box at the top of Notes and by "+ Note" on an email.
 //
 // fixedAddons: add-ons that always come with this note and can't be removed
 //   here, as { addon, label } (e.g. the link to the email being noted).
 // notes: the user's notes, to pick from when linking one.
-// onSave(body, addons) resolves once saved; the composer then clears itself.
-function NoteComposer({ notes, fixedAddons = [], onSave, onCancel, placeholder, className = '', autoFocus = false }) {
+// onSave(body, addons): saves as written. onAiSave(body, addons): lets the AI
+//   rewrite it and add more. Both resolve once saved; the composer then clears.
+//   With onAiSave there's also a Voice button: speak, and it's AI-saved at once.
+function NoteComposer({ notes, fixedAddons = [], onSave, onAiSave, onCancel, placeholder, className = '', autoFocus = false }) {
   const [draft, setDraft] = useState('');
   // add-ons picked but not saved yet: [{ addon, label }]
   const [pending, setPending] = useState([]);
   const [picker, setPicker] = useState(null); // 'reminder' | 'email' | 'note' | null
   const [menuOpen, setMenuOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving] = useState(null); // null | 'plain' | 'ai'
   const [error, setError] = useState(null);
 
   const has = kind => pending.some(p => p.addon.kind === kind);
@@ -24,7 +31,8 @@ function NoteComposer({ notes, fixedAddons = [], onSave, onCancel, placeholder, 
   const linkedNoteIds = new Set(pending.filter(p => p.addon.kind === 'note_link').map(p => p.addon.noteId));
   const linkableNotes = notes.filter(note => !linkedNoteIds.has(note.id));
 
-  // one reminder and one pin at most; the same email or note isn't added twice
+  // One reminder and one pin at most; the same email or note isn't added twice.
+  // Kept in a fixed order (reminder, pin, emails, notes) rather than the order picked.
   function addPending(addon, label) {
     setPending(prev => {
       const others = prev.filter(p => {
@@ -33,7 +41,7 @@ function NoteComposer({ notes, fixedAddons = [], onSave, onCancel, placeholder, 
         if (addon.kind === 'email_link') return p.addon.messageId !== addon.messageId;
         return p.addon.noteId !== addon.noteId;
       });
-      return [...others, { addon, label }];
+      return [...others, { addon, label }].sort((a, b) => KIND_ORDER.indexOf(a.addon.kind) - KIND_ORDER.indexOf(b.addon.kind));
     });
     setPicker(null);
     setMenuOpen(false);
@@ -43,23 +51,44 @@ function NoteComposer({ notes, fixedAddons = [], onSave, onCancel, placeholder, 
     setPending(prev => prev.filter((_, i) => i !== index));
   }
 
-  async function handleSave(e) {
-    e?.preventDefault();
-    const body = draft.trim();
-    if (!body || saving) return;
-    setSaving(true);
+  // mode: 'plain' (Save) or 'ai' (AI save). Throws if saving fails.
+  async function saveAs(mode, body) {
+    setSaving(mode);
     setError(null);
     try {
-      await onSave(body, [...fixedAddons, ...pending].map(p => p.addon));
+      const save = mode === 'ai' ? onAiSave : onSave;
+      await save(body, [...fixedAddons, ...pending].map(p => p.addon));
       setDraft('');
       setPending([]);
       setPicker(null);
-    } catch (err) {
-      setError(err.message);
     } finally {
-      setSaving(false);
+      setSaving(null);
     }
   }
+
+  // On failure the text and chips stay, so nothing is lost.
+  async function handleSave(mode) {
+    const body = draft.trim();
+    if (!body || saving) return;
+    try {
+      await saveAs(mode, body);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  // Voice always goes through AI save, straight away. What's spoken is added to
+  // anything already typed. If saving fails, the words land in the box instead.
+  const voice = useVoiceRecorder(async recording => {
+    const spoken = await transcribeRecording(recording);
+    const body = [draft.trim(), spoken].filter(Boolean).join('\n');
+    try {
+      await saveAs('ai', body);
+    } catch (err) {
+      setDraft(body);
+      throw err;
+    }
+  });
 
   function openPicker(kind) {
     setPicker(kind);
@@ -71,8 +100,13 @@ function NoteComposer({ notes, fixedAddons = [], onSave, onCancel, placeholder, 
       <textarea
         value={draft}
         onChange={e => setDraft(e.target.value)}
-        // Ctrl+Enter (Cmd+Enter on Mac) saves
-        onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSave(e); }}
+        // Ctrl+Enter (Cmd+Enter on Mac) saves as written
+        onKeyDown={e => {
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            handleSave('plain');
+          }
+        }}
         placeholder={placeholder}
         aria-label={placeholder}
         rows={2}
@@ -98,25 +132,25 @@ function NoteComposer({ notes, fixedAddons = [], onSave, onCancel, placeholder, 
       {picker === 'reminder' && (
         <ReminderPicker
           initial={reminder?.addon.remindAt}
-          onPick={remindAt => addPending({ kind: 'reminder', remindAt }, `⏰ ${formatReminder(remindAt)}`)}
+          onPick={remindAt => addPending({ kind: 'reminder', remindAt }, `Remind: ${formatReminder(remindAt)}`)}
           onCancel={() => setPicker(null)}
         />
       )}
       {picker === 'email' && (
         <EmailLinkPicker
-          onPick={message => addPending({ kind: 'email_link', messageId: message.id }, `✉ ${message.subject || '(no subject)'}`)}
+          onPick={message => addPending({ kind: 'email_link', messageId: message.id }, `Email: ${message.subject || '(no subject)'}`)}
           onCancel={() => setPicker(null)}
         />
       )}
       {picker === 'note' && (
         <NoteLinkPicker
           notes={linkableNotes}
-          onPick={note => addPending({ kind: 'note_link', noteId: note.id }, `🗒 ${noteTitle(note.body)}`)}
+          onPick={note => addPending({ kind: 'note_link', noteId: note.id }, `Note: ${noteTitle(note.body)}`)}
           onCancel={() => setPicker(null)}
         />
       )}
 
-      {error && <p className="form-error">{error}</p>}
+      {(error || voice.error) && <p className="form-error">{error || voice.error}</p>}
 
       {!picker && (
         <div className="composer-actions">
@@ -126,10 +160,10 @@ function NoteComposer({ notes, fixedAddons = [], onSave, onCancel, placeholder, 
             </button>
             {menuOpen && (
               <div className="add-addon-options">
-                <button type="button" onClick={() => openPicker('reminder')}>⏰ {reminder ? 'Change reminder' : 'Reminder'}</button>
-                <button type="button" onClick={() => openPicker('email')}>✉ Link email</button>
-                <button type="button" onClick={() => openPicker('note')}>🗒 Link note</button>
-                {!has('pin') && <button type="button" onClick={() => addPending({ kind: 'pin' }, '📌 Pinned')}>📌 Pin</button>}
+                <button type="button" onClick={() => openPicker('reminder')}>{reminder ? 'Change reminder' : 'Reminder'}</button>
+                <button type="button" onClick={() => openPicker('email')}>Link email</button>
+                <button type="button" onClick={() => openPicker('note')}>Link note</button>
+                {!has('pin') && <button type="button" onClick={() => addPending({ kind: 'pin' }, 'Pinned')}>Pin</button>}
               </div>
             )}
           </div>
@@ -137,8 +171,22 @@ function NoteComposer({ notes, fixedAddons = [], onSave, onCancel, placeholder, 
             {onCancel && (
               <button type="button" className="btn btn-ghost btn-small" onClick={onCancel}>Cancel</button>
             )}
-            <button type="button" className="btn btn-small" onClick={handleSave} disabled={!draft.trim() || saving}>
-              {saving ? 'Saving...' : 'Save'}
+            {onAiSave && (
+              <VoiceButton recorder={voice} workingLabel="AI saving..." disabled={!!saving} />
+            )}
+            {onAiSave && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-small"
+                onClick={() => handleSave('ai')}
+                disabled={!draft.trim() || saving}
+                title="Let the AI tidy the text and add a reminder, pin or links"
+              >
+                {saving === 'ai' ? 'AI saving...' : 'AI save'}
+              </button>
+            )}
+            <button type="button" className="btn btn-small" onClick={() => handleSave('plain')} disabled={!draft.trim() || saving}>
+              {saving === 'plain' ? 'Saving...' : 'Save'}
             </button>
           </div>
         </div>

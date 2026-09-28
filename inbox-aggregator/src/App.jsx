@@ -9,6 +9,9 @@ import {
   askAssistant,
   getNotes,
   createNote,
+  aiSaveNote,
+  suggestOrganizing,
+  getStatus,
   updateNote,
   deleteNote,
   addNoteAddon,
@@ -20,6 +23,7 @@ import { dueReminderCount } from './notes';
 import { useNow } from './hooks/useNow';
 import Sidebar from './components/Sidebar';
 import MainPane from './components/MainPane';
+import CreditsBanner from './components/CreditsBanner';
 import './styles/app.scss';
 
 const PAGE_SIZE = 25;
@@ -110,6 +114,25 @@ function App({ userEmail, onSignOut }) {
   const [notes, setNotes] = useState([]);
   const [selectedNoteId, setSelectedNoteId] = useState(null);
   const selectedNote = notes.find(note => note.id === selectedNoteId) || null;
+  // a heads-up from the last AI save, shown on the note it made: { noteId, message }
+  const [aiHeadsUp, setAiHeadsUp] = useState(null);
+
+  // out-of-credits problems with the AI providers, for the red banner
+  const [providerProblems, setProviderProblems] = useState([]);
+  const [hiddenProblems, setHiddenProblems] = useState({}); // provider -> the `since` that was hidden
+
+  function refreshStatus() {
+    getStatus().then(status => setProviderProblems(status.problems)).catch(() => {});
+  }
+
+  // checked on open and every few minutes, since background syncs can hit it too
+  useEffect(() => {
+    let active = true;
+    const load = () => getStatus().then(status => { if (active) setProviderProblems(status.problems); }).catch(() => {});
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
   // re-checked every minute, so a reminder turns due while the app is open
   const now = useNow();
 
@@ -206,6 +229,7 @@ function App({ userEmail, onSignOut }) {
       console.error(err);
     } finally {
       setSyncing(false);
+      refreshStatus(); // indexing new mail may have hit a credits problem
     }
   }
 
@@ -334,18 +358,27 @@ function App({ userEmail, onSignOut }) {
     setNotes(await getNotes());
   }
 
-  // addons: picked in the composer before saving, attached as the note is created
+  // Saving from the Notes box or from "+ Note" on an email (where addons already
+  // include the link to that email). Either way the new note opens, so it's
+  // clear it was made and any mistakes are visible straight away. (Going back to
+  // the email later reloads it, so its new sticky note shows there too.)
   async function handleCreateNote(body, addons) {
-    await createNote(body, addons);
+    const { id } = await createNote(body, addons);
     await refreshNotes();
+    openNote(id);
   }
 
-  // A sticky note written on an email: its addons already include the link to
-  // that email. The email's view is reloaded so the new card appears on it.
-  async function handleCreateNoteForEmail(body, addons, messageId) {
-    await createNote(body, addons);
-    const [message] = await Promise.all([getMessage(messageId), refreshNotes()]);
-    setLoadedMessage(prev => (prev?.id === messageId ? { ...prev, message } : prev));
+  // AI save: the AI rewrites the text and adds more add-ons. Anything it wants
+  // the user to know (e.g. an email it couldn't find) shows on the opened note.
+  async function handleAiSaveNote(body, addons) {
+    try {
+      const { id, message } = await aiSaveNote(body, addons);
+      await refreshNotes();
+      setAiHeadsUp(message ? { noteId: id, message } : null);
+      openNote(id);
+    } finally {
+      refreshStatus();
+    }
   }
 
   async function handleSaveNoteBody(noteId, body) {
@@ -364,6 +397,30 @@ function App({ userEmail, onSignOut }) {
       console.error(err);
       setNotice({ type: 'error', text: "Couldn't save the new order, try again" });
       refreshNotes().catch(() => {});
+    }
+  }
+
+  // Applies the Organize suggestions the user kept, through the same routes as
+  // doing each by hand. order: { noteIds } in their new order, or null.
+  async function handleApplyOrganizing(changes, order) {
+    const byId = new Map(notes.map(note => [note.id, note]));
+    try {
+      for (const change of changes) {
+        const note = byId.get(change.noteId);
+        if (!note) continue;
+        if (change.action === 'pin') await addNoteAddon(note.id, { kind: 'pin' });
+        if (change.action === 'unpin' && note.pin) await removeNoteAddon(note.pin.id);
+        if (change.action === 'mark_done' && note.reminder) await updateNoteAddon(note.reminder.id, { done: true });
+        if (change.action === 'link') await addNoteAddon(note.id, { kind: 'note_link', noteId: change.otherNoteId });
+      }
+      if (order) {
+        // positions 0, 1, 2... in the new order, saving only the ones that change
+        for (const [index, noteId] of order.noteIds.entries()) {
+          if (byId.get(noteId)?.position !== index) await updateNote(noteId, { position: index });
+        }
+      }
+    } finally {
+      await refreshNotes();
     }
   }
 
@@ -396,23 +453,39 @@ function App({ userEmail, onSignOut }) {
     onUpdateAddon: handleUpdateNoteAddon,
     onRemoveAddon: handleRemoveNoteAddon,
     onOpenNote: openNote,
-    onCreateNoteForEmail: handleCreateNoteForEmail,
+    onCreate: handleCreateNote,
+    onAiCreate: handleAiSaveNote,
   };
 
   async function handleAsk(question) {
+    // the email on screen when asking is "this email" for the assistant
+    const openMessageId = selectedMessageId;
     openChat(); // the answer shows in the chat
     setChatLoading(true);
     setChatError(null);
     try {
       // earlier exchanges go along so follow-up questions make sense
       const history = chatHistory.map(({ question: q, answer }) => ({ question: q, answer }));
-      const result = await askAssistant(question, history);
+      const result = await askAssistant(question, history, { openMessageId });
       setChatHistory(prev => [...prev, { question, ...result }]);
+      if (result.createdNotes?.length) await refreshNotes();
     } catch (err) {
       setChatError(err.message);
     } finally {
       setChatLoading(false);
+      refreshStatus();
     }
+  }
+
+  // Undo on a note the assistant created: deletes it and marks its card as undone.
+  async function handleUndoCreatedNote(exchangeIndex, noteId) {
+    await deleteNote(noteId);
+    if (selectedNoteId === noteId) setSelectedNoteId(null);
+    setChatHistory(prev => prev.map((exchange, i) => (i !== exchangeIndex ? exchange : {
+      ...exchange,
+      createdNotes: exchange.createdNotes.map(note => (note.id === noteId ? { ...note, undone: true } : note)),
+    })));
+    await refreshNotes();
   }
 
   const selectedAccount = accounts.find(a => a.id === selectedMessage?.account_id);
@@ -420,8 +493,14 @@ function App({ userEmail, onSignOut }) {
   return (
     <div className={`app phone-shows-${phoneScreen}`}>
       <Sidebar
+        creditsBanner={(
+          <CreditsBanner
+            problems={providerProblems}
+            hiddenSince={hiddenProblems}
+            onHide={problem => setHiddenProblems(prev => ({ ...prev, [problem.provider]: problem.since }))}
+          />
+        )}
         onAsk={handleAsk}
-        onFocusChat={() => { setSelectedMessageId(null); setSelectedNoteId(null); }}
         chatCount={chatHistory.length}
         onOpenChat={openChat}
         asking={chatLoading}
@@ -456,7 +535,16 @@ function App({ userEmail, onSignOut }) {
         selectedNoteId={selectedNoteId}
         onSelectNote={openNote}
         onCreateNote={handleCreateNote}
+        onAiCreateNote={handleAiSaveNote}
         onMoveNote={handleMoveNote}
+        onSuggestOrganizing={async () => {
+          try {
+            return await suggestOrganizing();
+          } finally {
+            refreshStatus();
+          }
+        }}
+        onApplyOrganizing={handleApplyOrganizing}
       />
       <MainPane
         selectedMessageId={selectedMessageId}
@@ -471,7 +559,10 @@ function App({ userEmail, onSignOut }) {
         notes={notes}
         now={now}
         noteActions={noteActions}
+        aiHeadsUp={aiHeadsUp}
+        onDismissAiHeadsUp={() => setAiHeadsUp(null)}
         onOpenMessage={openMessage}
+        onUndoCreatedNote={handleUndoCreatedNote}
         onCloseMessage={() => setSelectedMessageId(null)}
         onBackToList={showListScreen}
         backLabel={tab === 'notes' ? 'Notes' : 'Inbox'}

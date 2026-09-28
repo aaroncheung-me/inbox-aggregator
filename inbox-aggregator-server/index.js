@@ -2,7 +2,6 @@ require('dotenv').config();
 const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
-const Anthropic = require('@anthropic-ai/sdk');
 
 const supabase = require('./lib/supabase');
 const { getKey } = require('./lib/crypto');
@@ -10,6 +9,11 @@ const { listAccounts, listAllAccounts, getAccount, saveConnectedAccount, updateA
 const { embedPending } = require('./lib/embeddings');
 const { keywordSearch, parseSearchQuery } = require('./lib/search');
 const { askAssistant } = require('./lib/assistant');
+const { aiSaveNote } = require('./lib/aiSave');
+const { suggestOrganizing } = require('./lib/organize');
+const { transcribe, TRANSCRIBE_TYPES } = require('./lib/transcribe');
+const { describeProviderError } = require('./lib/providerErrors');
+const { noteProviderFailure, noteProviderSuccess, currentProblems } = require('./lib/providerStatus');
 const {
   listNotes,
   notesForMessage,
@@ -339,6 +343,51 @@ app.post('/notes', withUserErrors(async (req, res) => {
   res.status(201).json({ id });
 }));
 
+// AI save. Body: { text, addons?: [...picked by hand], timeZone }. The AI
+// rewrites the text and adds reminder, pin and links; returns { id, message, usage }.
+// Declared before /notes/:noteId so "ai-save" isn't taken as an id.
+app.post('/notes/ai-save', withUserErrors(async (req, res) => {
+  const text = typeof req.body?.text === 'string' ? req.body.text.trim().slice(0, 10000) : '';
+  if (!text) throw new UserError('Write something first');
+
+  const accounts = await listAccounts(req.userId);
+  try {
+    const saved = await aiSaveNote({
+      userId: req.userId,
+      accountIds: accounts.filter(a => a.show_in_inbox).map(a => a.id),
+      ownAddresses: accounts.map(a => a.email_address.toLowerCase()),
+      text,
+      manualAddons: Array.isArray(req.body.addons) ? req.body.addons : [],
+      timeZone: req.body.timeZone,
+    });
+    noteProviderSuccess('anthropic');
+    res.status(201).json(saved);
+  } catch (err) {
+    noteProviderFailure(err);
+    const problem = describeProviderError(err);
+    if (!problem) throw err;
+    console.error('AI save request failed:', err);
+    res.status(502).json({ error: `${problem.message} Your note was not saved; try again or use Save.`, outOfCredits: problem.outOfCredits });
+  }
+}));
+
+// Organize. Body: { timeZone }. The AI suggests pins, unpins, links, finished
+// reminders and a better order; nothing changes until the user applies them
+// (through the ordinary note routes). Returns { changes, order, usage }.
+app.post('/notes/organize', async (req, res) => {
+  try {
+    const suggestions = await suggestOrganizing({ userId: req.userId, timeZone: req.body?.timeZone });
+    noteProviderSuccess('anthropic');
+    res.json(suggestions);
+  } catch (err) {
+    noteProviderFailure(err);
+    const problem = describeProviderError(err);
+    if (!problem) throw err;
+    console.error('Organize request failed:', err);
+    res.status(502).json({ error: problem.message, outOfCredits: problem.outOfCredits });
+  }
+});
+
 // Body: { body?, position? }
 app.patch('/notes/:noteId', withUserErrors(async (req, res) => {
   const updated = await updateNote(req.userId, req.params.noteId, req.body || {});
@@ -371,8 +420,9 @@ app.delete('/note-addons/:addonId', async (req, res) => {
 
 // ---------- AI assistant ----------
 
-// Body: { question, history?: [{ question, answer }] } (earlier exchanges in this chat, oldest first).
-// Returns { answer, sources, steps, usage }; see lib/assistant.js.
+// Body: { question, history?: [{ question, answer }] (earlier exchanges in this chat, oldest first),
+//         openMessageId? (the email open in the app, for "note this email"), timeZone? }
+// Returns { answer, sources, steps, createdNotes, usage }; see lib/assistant.js.
 app.post('/ask', async (req, res) => {
   const question = typeof req.body?.question === 'string' ? req.body.question.trim().slice(0, 1000) : '';
   if (!question) return res.status(400).json({ error: 'Ask a question first' });
@@ -391,17 +441,59 @@ app.post('/ask', async (req, res) => {
       answer: 'All your accounts are hidden. Check one in the Accounts panel to search it.',
       sources: [],
       steps: [],
+      createdNotes: [],
       usage: null,
     });
   }
 
   try {
-    res.json(await askAssistant({ userId: req.userId, accountIds, ownAddresses, question, history }));
+    const answer = await askAssistant({
+      userId: req.userId,
+      accountIds,
+      ownAddresses,
+      question,
+      history,
+      openMessageId: Number(req.body.openMessageId) || null,
+      timeZone: req.body.timeZone,
+    });
+    noteProviderSuccess('anthropic');
+    res.json(answer);
   } catch (err) {
-    if (!(err instanceof Anthropic.APIError)) throw err;
-    console.error('Claude request failed:', err);
-    const busy = err instanceof Anthropic.RateLimitError || err.status === 529;
-    res.status(502).json({ error: busy ? 'The AI is busy right now, try again in a moment' : 'The AI request failed, check the server terminal' });
+    noteProviderFailure(err);
+    const problem = describeProviderError(err);
+    if (!problem) throw err;
+    console.error('Assistant request failed:', err);
+    res.status(502).json({ error: problem.message, outOfCredits: problem.outOfCredits });
+  }
+});
+
+// ---------- AI provider status ----------
+
+// Out-of-credits problems with Anthropic or OpenAI seen recently, including in
+// background syncs, for the app's banner: [{ provider, message, since }].
+app.get('/status', (req, res) => {
+  res.json({ problems: currentProblems() });
+});
+
+// ---------- voice ----------
+
+// Body: the raw recording (Content-Type: audio/webm, audio/mp4, ...). Returns { text }.
+// The audio is only held in memory while it's transcribed; it's never stored.
+app.post('/transcribe', express.raw({ type: TRANSCRIBE_TYPES, limit: '10mb' }), async (req, res) => {
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'No recording was received' });
+
+  try {
+    const text = await transcribe(req.body, req.get('content-type'));
+    noteProviderSuccess('openai');
+    if (!text) return res.status(422).json({ error: "Couldn't hear anything in that recording" });
+    res.json({ text });
+  } catch (err) {
+    if (err instanceof UserError) return res.status(400).json({ error: err.message });
+    noteProviderFailure(err);
+    const problem = describeProviderError(err);
+    if (!problem) throw err;
+    console.error('Transcription failed:', err);
+    res.status(502).json({ error: problem.message, outOfCredits: problem.outOfCredits });
   }
 });
 

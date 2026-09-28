@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import VoiceButton from './VoiceButton';
+import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
+import { transcribeRecording } from '../api';
 
 const MODES = {
   ai: {
@@ -17,10 +20,21 @@ const MODES = {
 
 // One box, two modes: ask the AI assistant, or a plain search (free, instant)
 // that lists matching emails in the sidebar.
-function AskBar({ onAsk, onSearch, onFocusChat, asking }) {
+function AskBar({ onAsk, onSearch, asking }) {
   const [mode, setMode] = useState('ai');
   const [input, setInput] = useState('');
   const current = MODES[mode];
+
+  // Voice acts at once: a spoken question is asked, a spoken search is run.
+  const voice = useVoiceRecorder(async recording => {
+    const spoken = await transcribeRecording(recording);
+    if (mode === 'ai') {
+      onAsk(spoken);
+    } else {
+      setInput(spoken);
+      onSearch(spoken);
+    }
+  });
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -56,14 +70,15 @@ function AskBar({ onAsk, onSearch, onFocusChat, asking }) {
           type="text"
           value={input}
           onChange={e => setInput(e.target.value)}
-          onFocus={mode === 'ai' ? onFocusChat : undefined}
           placeholder={current.placeholder}
           aria-label={current.ariaLabel}
         />
+        <VoiceButton recorder={voice} workingLabel="..." disabled={mode === 'ai' && asking} />
         <button type="submit" className="btn" disabled={mode === 'ai' && asking}>
           {mode === 'ai' && asking ? '...' : current.button}
         </button>
       </form>
+      {voice.error && <p className="form-error ask-bar-error">{voice.error}</p>}
     </div>
   );
 }

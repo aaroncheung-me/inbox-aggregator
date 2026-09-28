@@ -1,5 +1,6 @@
 const OpenAI = require('openai');
 const supabase = require('./supabase');
+const { noteProviderFailure, noteProviderSuccess } = require('./providerStatus');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -7,10 +8,17 @@ const MAX_CHARS = 8000; // stay well under the model's per-input limit
 const BATCH_SIZE = 50;  // texts per embeddings request
 
 async function generateEmbeddings(texts) {
-  const response = await openai.embeddings.create({
-    model: 'text-embedding-3-small',
-    input: texts.map(t => t.slice(0, MAX_CHARS)),
-  });
+  let response;
+  try {
+    response = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: texts.map(t => t.slice(0, MAX_CHARS)),
+    });
+  } catch (err) {
+    noteProviderFailure(err); // e.g. out of credits, shown as a banner in the app
+    throw err;
+  }
+  noteProviderSuccess('openai');
   // results carry their input position; sort rather than trust response order
   return response.data.sort((a, b) => a.index - b.index).map(d => d.embedding);
 }

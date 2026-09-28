@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatReminder, noteTitle, reminderIsDue } from '../notes';
+import { senderName, shortDate } from '../format';
 import { EmailLinkPicker, NoteLinkPicker, ReminderPicker } from './NoteAddonPickers';
 
 const SAVE_DELAY_MS = 800;
@@ -10,9 +11,24 @@ function AiTag({ addedBy }) {
   return addedBy === 'ai' ? <span className="ai-tag" title="Added by the AI">AI</span> : null;
 }
 
+// A heading with a count over a list of linked items. Starts open with a few
+// items and closed with many, so a note with lots attached stays readable.
+function LinkedSection({ title, count, children }) {
+  return (
+    <details className="linked-section" open={count <= 3}>
+      <summary>{title} ({count})</summary>
+      <ul className="linked-list">{children}</ul>
+    </details>
+  );
+}
+
 // One note in the main pane: its text (saved as you type) and its add-ons.
 // The parent gives this component a key per note, so switching notes starts fresh.
-function NoteDetail({ note, notes, now, onSaveBody, onDelete, onAddAddon, onUpdateAddon, onRemoveAddon, onOpenMessage, onOpenNote }) {
+// headsUp: a message from the AI save that made this note (e.g. an email it couldn't find).
+function NoteDetail({
+  note, notes, now, onSaveBody, onDelete, onAddAddon, onUpdateAddon, onRemoveAddon, onOpenMessage, onOpenNote,
+  headsUp, onDismissHeadsUp,
+}) {
   const [draft, setDraft] = useState(note.body);
   const [saveState, setSaveState] = useState('saved');
   const [picker, setPicker] = useState(null); // 'reminder' | 'email' | 'note' | null
@@ -76,10 +92,18 @@ function NoteDetail({ note, notes, now, onSaveBody, onDelete, onAddAddon, onUpda
   const due = reminderIsDue(reminder, now);
   const linkedNoteIds = new Set(note.noteLinks.map(link => link.noteId));
   const linkableNotes = notes.filter(other => other.id !== note.id && !linkedNoteIds.has(other.id));
-  const hasAddons = reminder || note.pin || note.emailLinks.length || note.noteLinks.length;
+  // Boolean(): with no links, `a || b || 0` would be the number 0, which React shows on screen
+  const hasAddons = Boolean(reminder || note.pin || note.emailLinks.length || note.noteLinks.length);
+  const emailLinks = [...note.emailLinks].sort((a, b) => (b.message.received_at || '').localeCompare(a.message.received_at || ''));
 
   return (
     <div className="note-detail">
+      {headsUp && (
+        <div className="notice notice-success ai-heads-up" role="status">
+          <span><span className="ai-tag">AI</span> {headsUp}</span>
+          <button className="notice-dismiss" onClick={onDismissHeadsUp} aria-label="Dismiss">×</button>
+        </div>
+      )}
       <textarea
         className="note-body"
         value={draft}
@@ -93,50 +117,63 @@ function NoteDetail({ note, notes, now, onSaveBody, onDelete, onAddAddon, onUpda
 
       {hasAddons && (
         <div className="note-addons">
-          {reminder && (
-            <div className={`addon-chip reminder${due ? ' due' : ''}${reminder.done_at ? ' done' : ''}`}>
-              <label className="reminder-done" title={reminder.done_at ? 'Mark as not done' : 'Mark as done'}>
-                <input
-                  type="checkbox"
-                  checked={!!reminder.done_at}
-                  onChange={e => run(() => onUpdateAddon(reminder.id, { done: e.target.checked }))}
-                />
-              </label>
-              <button className="addon-chip-main" onClick={() => openPicker('reminder')} title="Change the time">
-                ⏰ {formatReminder(reminder.remind_at)}{due ? ' · due' : ''}
-              </button>
-              <AiTag addedBy={reminder.added_by} />
-              <button className="addon-remove" onClick={() => run(() => onRemoveAddon(reminder.id))} aria-label="Remove reminder">×</button>
+          {/* always in this order: reminder and pin, then linked emails, then linked notes */}
+          {(reminder || note.pin) && (
+            <div className="addon-status-row">
+              {reminder && (
+                <div className={`addon-chip reminder${due ? ' due' : ''}${reminder.done_at ? ' done' : ''}`}>
+                  <label className="reminder-done" title={reminder.done_at ? 'Mark as not done' : 'Mark as done'}>
+                    <input
+                      type="checkbox"
+                      checked={!!reminder.done_at}
+                      onChange={e => run(() => onUpdateAddon(reminder.id, { done: e.target.checked }))}
+                    />
+                  </label>
+                  <button className="addon-chip-main" onClick={() => openPicker('reminder')} title="Change the time">
+                    Remind: {formatReminder(reminder.remind_at)}{due ? ' · due' : ''}
+                  </button>
+                  <AiTag addedBy={reminder.added_by} />
+                  <button className="addon-remove" onClick={() => run(() => onRemoveAddon(reminder.id))} aria-label="Remove reminder">×</button>
+                </div>
+              )}
+              {note.pin && (
+                <div className="addon-chip">
+                  <span className="addon-chip-main">Pinned</span>
+                  <AiTag addedBy={note.pin.added_by} />
+                  <button className="addon-remove" onClick={() => run(() => onRemoveAddon(note.pin.id))} aria-label="Unpin">×</button>
+                </div>
+              )}
             </div>
           )}
 
-          {note.pin && (
-            <div className="addon-chip">
-              <span className="addon-chip-main">📌 Pinned</span>
-              <AiTag addedBy={note.pin.added_by} />
-              <button className="addon-remove" onClick={() => run(() => onRemoveAddon(note.pin.id))} aria-label="Unpin">×</button>
-            </div>
+          {emailLinks.length > 0 && (
+            <LinkedSection title="Linked emails" count={emailLinks.length}>
+              {emailLinks.map(link => (
+                <li key={link.addonId} className="linked-row">
+                  <button className="linked-main" onClick={() => onOpenMessage(link.message.id)} title="Open this email">
+                    <span className="linked-title">{link.message.subject || '(no subject)'}</span>
+                    <span className="linked-meta">{senderName(link.message.sender)} · {shortDate(link.message.received_at)}</span>
+                  </button>
+                  <AiTag addedBy={link.added_by} />
+                  <button className="addon-remove" onClick={() => run(() => onRemoveAddon(link.addonId))} aria-label="Unlink email">×</button>
+                </li>
+              ))}
+            </LinkedSection>
           )}
 
-          {note.emailLinks.map(link => (
-            <div key={link.addonId} className="addon-chip">
-              <button className="addon-chip-main" onClick={() => onOpenMessage(link.message.id)} title="Open this email">
-                ✉ {link.message.subject || '(no subject)'}
-              </button>
-              <AiTag addedBy={link.added_by} />
-              <button className="addon-remove" onClick={() => run(() => onRemoveAddon(link.addonId))} aria-label="Unlink email">×</button>
-            </div>
-          ))}
-
-          {note.noteLinks.map(link => (
-            <div key={link.addonId} className="addon-chip">
-              <button className="addon-chip-main" onClick={() => onOpenNote(link.noteId)} title="Open this note">
-                🗒 {link.preview}
-              </button>
-              <AiTag addedBy={link.added_by} />
-              <button className="addon-remove" onClick={() => run(() => onRemoveAddon(link.addonId))} aria-label="Unlink note">×</button>
-            </div>
-          ))}
+          {note.noteLinks.length > 0 && (
+            <LinkedSection title="Linked notes" count={note.noteLinks.length}>
+              {note.noteLinks.map(link => (
+                <li key={link.addonId} className="linked-row">
+                  <button className="linked-main" onClick={() => onOpenNote(link.noteId)} title="Open this note">
+                    <span className="linked-title">{link.preview}</span>
+                  </button>
+                  <AiTag addedBy={link.added_by} />
+                  <button className="addon-remove" onClick={() => run(() => onRemoveAddon(link.addonId))} aria-label="Unlink note">×</button>
+                </li>
+              ))}
+            </LinkedSection>
+          )}
         </div>
       )}
 
@@ -171,10 +208,10 @@ function NoteDetail({ note, notes, now, onSaveBody, onDelete, onAddAddon, onUpda
             </button>
             {menuOpen && (
               <div className="add-addon-options">
-                <button onClick={() => openPicker('reminder')}>⏰ {reminder ? 'Change reminder' : 'Reminder'}</button>
-                <button onClick={() => openPicker('email')}>✉ Link email</button>
-                <button onClick={() => openPicker('note')}>🗒 Link note</button>
-                {!note.pin && <button onClick={() => run(() => onAddAddon(note.id, { kind: 'pin' }))}>📌 Pin</button>}
+                <button onClick={() => openPicker('reminder')}>{reminder ? 'Change reminder' : 'Reminder'}</button>
+                <button onClick={() => openPicker('email')}>Link email</button>
+                <button onClick={() => openPicker('note')}>Link note</button>
+                {!note.pin && <button onClick={() => run(() => onAddAddon(note.id, { kind: 'pin' }))}>Pin</button>}
               </div>
             )}
           </div>

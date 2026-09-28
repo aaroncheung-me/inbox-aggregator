@@ -29,10 +29,10 @@ function NoteListItem({ note, now, selected, onSelect, sortable = true }) {
       {(note.reminder || note.emailLinks.length > 0 || note.noteLinks.length > 0) && (
         <div className="note-list-chips">
           {note.reminder && (
-            <span className={`mini-chip${due ? ' due' : ''}`}>⏰ {formatReminder(note.reminder.remind_at)}</span>
+            <span className={`mini-chip${due ? ' due' : ''}`}>Remind: {formatReminder(note.reminder.remind_at)}</span>
           )}
-          {note.emailLinks.length > 0 && <span className="mini-chip">✉ {note.emailLinks.length}</span>}
-          {note.noteLinks.length > 0 && <span className="mini-chip">🗒 {note.noteLinks.length}</span>}
+          {note.emailLinks.length > 0 && <span className="mini-chip">{note.emailLinks.length} email{note.emailLinks.length === 1 ? '' : 's'}</span>}
+          {note.noteLinks.length > 0 && <span className="mini-chip">{note.noteLinks.length} note{note.noteLinks.length === 1 ? '' : 's'}</span>}
         </div>
       )}
     </div>

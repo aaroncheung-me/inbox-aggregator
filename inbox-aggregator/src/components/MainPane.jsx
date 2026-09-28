@@ -3,7 +3,8 @@ import EmailDetail from './EmailDetail';
 import NoteDetail from './NoteDetail';
 
 // Shows one of: the selected email, the selected note, or the assistant chat.
-// noteActions: { onSaveBody, onDelete, onAddAddon, onUpdateAddon, onRemoveAddon, onOpenNote, onCreateNoteForEmail }
+// noteActions: { onSaveBody, onDelete, onAddAddon, onUpdateAddon, onRemoveAddon, onOpenNote, onCreate, onAiCreate }
+// aiHeadsUp: { noteId, message } from the last AI save, shown on that note.
 function MainPane({
   selectedMessageId,
   selectedMessage,
@@ -14,10 +15,13 @@ function MainPane({
   notes,
   now,
   noteActions,
+  aiHeadsUp,
+  onDismissAiHeadsUp,
   chatHistory,
   chatLoading,
   chatError,
   onOpenMessage,
+  onUndoCreatedNote,
   onCloseMessage,
   onBackToList,
   backLabel,
@@ -37,6 +41,8 @@ function MainPane({
         onRemoveAddon={noteActions.onRemoveAddon}
         onOpenMessage={onOpenMessage}
         onOpenNote={noteActions.onOpenNote}
+        headsUp={aiHeadsUp?.noteId === selectedNote.id ? aiHeadsUp.message : null}
+        onDismissHeadsUp={onDismissAiHeadsUp}
       />
     );
   } else if (selectedMessageId != null) {
@@ -53,12 +59,22 @@ function MainPane({
           now={now}
           allNotes={notes}
           onOpenNote={noteActions.onOpenNote}
-          onCreateNote={noteActions.onCreateNoteForEmail}
+          onCreateNote={noteActions.onCreate}
+          onAiCreateNote={noteActions.onAiCreate}
         />
       </>
     );
   } else {
-    content = <ChatPanel history={chatHistory} loading={chatLoading} error={chatError} onOpenMessage={onOpenMessage} />;
+    content = (
+      <ChatPanel
+        history={chatHistory}
+        loading={chatLoading}
+        error={chatError}
+        onOpenMessage={onOpenMessage}
+        onOpenNote={noteActions.onOpenNote}
+        onUndoCreatedNote={onUndoCreatedNote}
+      />
+    );
   }
 
   return (

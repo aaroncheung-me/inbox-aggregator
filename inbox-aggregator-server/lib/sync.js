@@ -91,7 +91,19 @@ async function runSync(account) {
 
   await saveMessages(account.id, result.messages);
   await applyLabelUpdates(account.id, result.labelUpdates);
-  const embedded = await embedPending(account.id);
+
+  // Indexing new mail for search needs OpenAI. If that fails (say credits ran
+  // out) the mail is still saved and the sync still counts; the messages stay
+  // unindexed and are picked up by a later sync once it works again.
+  let embedded = 0;
+  let indexingError = null;
+  try {
+    embedded = await embedPending(account.id);
+  } catch (err) {
+    indexingError = err.message;
+    console.error(`Indexing new mail failed for account ${account.id}; will retry next sync:`, err.message);
+  }
+
   const lastSyncedAt = await saveSyncState(account.id, result.syncState);
 
   return {
@@ -99,6 +111,7 @@ async function runSync(account) {
     emailAddress: account.email_address,
     saved: result.messages.length,
     embedded,
+    indexingError,
     lastSyncedAt,
   };
 }

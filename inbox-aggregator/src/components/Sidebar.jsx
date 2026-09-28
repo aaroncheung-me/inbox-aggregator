@@ -10,7 +10,6 @@ import { PHONE_LAYOUT } from '../layout';
 
 function Sidebar({
   onAsk,
-  onFocusChat,
   asking,
   lastSyncedAt,
   onSync,
@@ -44,7 +43,11 @@ function Sidebar({
   selectedNoteId,
   onSelectNote,
   onCreateNote,
+  onAiCreateNote,
   onMoveNote,
+  onSuggestOrganizing,
+  onApplyOrganizing,
+  creditsBanner,
 }) {
   const accountColors = new Map(accounts.map(a => [a.id, a.color]));
   // Desktop: sync status and accounts sit above the inbox list, sign-out below it.
@@ -98,7 +101,8 @@ function Sidebar({
 
   return (
     <div className="sidebar">
-      <AskBar onAsk={onAsk} onSearch={onSearch} onFocusChat={onFocusChat} asking={asking} />
+      {creditsBanner}
+      <AskBar onAsk={onAsk} onSearch={onSearch} asking={asking} />
       {/* phone layout only: on desktop the chat is always beside the list */}
       {chatCount > 0 && (
         <button className="phone-open-chat phone-only" onClick={onOpenChat}>
@@ -117,7 +121,10 @@ function Sidebar({
               selectedNoteId={selectedNoteId}
               onSelect={onSelectNote}
               onCreate={onCreateNote}
+              onAiCreate={onAiCreateNote}
               onMove={onMoveNote}
+              onSuggestOrganizing={onSuggestOrganizing}
+              onApplyOrganizing={onApplyOrganizing}
             />
           </>
         ) : (

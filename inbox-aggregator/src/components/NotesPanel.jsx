@@ -11,14 +11,32 @@ import {
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import NoteListItem from './NoteListItem';
 import NoteComposer from './NoteComposer';
+import OrganizeReview from './OrganizeReview';
 import { groupNotes, positionBetween } from '../notes';
 
 // The sidebar's Notes view: a box for writing a note (with its add-ons), then
 // the notes in the user's order. Pinned notes form their own group on top;
 // ticked-off reminders are tucked into a collapsed Done group. Drag within a
-// group to reorder. onCreate(body, addons) saves a new note.
-function NotesPanel({ notes, now, selectedNoteId, onSelect, onCreate, onMove }) {
+// group to reorder. onCreate / onAiCreate(body, addons) save a new note.
+// Organize asks the AI for tidying suggestions (onSuggestOrganizing), which are
+// reviewed here and applied with onApplyOrganizing(changes, order).
+function NotesPanel({ notes, now, selectedNoteId, onSelect, onCreate, onAiCreate, onMove, onSuggestOrganizing, onApplyOrganizing }) {
   const [showDone, setShowDone] = useState(false);
+  const [organizing, setOrganizing] = useState(false);
+  const [suggestions, setSuggestions] = useState(null);
+  const [organizeError, setOrganizeError] = useState(null);
+
+  async function handleOrganize() {
+    setOrganizing(true);
+    setOrganizeError(null);
+    try {
+      setSuggestions(await onSuggestOrganizing());
+    } catch (err) {
+      setOrganizeError(err.message);
+    } finally {
+      setOrganizing(false);
+    }
+  }
 
   // A small movement (or, on touch, a press-and-hold) starts a drag, so taps
   // still open the note and swipes still scroll the list.
@@ -61,11 +79,28 @@ function NotesPanel({ notes, now, selectedNoteId, onSelect, onCreate, onMove }) 
 
   return (
     <div className="notes-panel">
-      <NoteComposer notes={notes} onSave={onCreate} placeholder="Write a note..." className="note-capture" />
+      <NoteComposer notes={notes} onSave={onCreate} onAiSave={onAiCreate} placeholder="Write a note..." className="note-capture" />
 
       {notes.length === 0 && <p className="notes-empty">No notes yet. Write one above.</p>}
 
-      {renderGroup(pinned.length ? '📌 Pinned' : null, pinned)}
+      {notes.length >= 2 && !suggestions && (
+        <div className="notes-toolbar">
+          <button
+            className="btn btn-ghost btn-small"
+            onClick={handleOrganize}
+            disabled={organizing}
+            title="The AI suggests pins, links, finished reminders and a better order. Nothing changes until you apply."
+          >
+            {organizing ? 'Organizing...' : 'Organize'}
+          </button>
+          {organizeError && <span className="form-error">{organizeError}</span>}
+        </div>
+      )}
+      {suggestions && (
+        <OrganizeReview suggestions={suggestions} onApply={onApplyOrganizing} onClose={() => setSuggestions(null)} />
+      )}
+
+      {renderGroup(pinned.length ? 'Pinned' : null, pinned)}
       {renderGroup(pinned.length && other.length ? 'Notes' : null, other)}
 
       {done.length > 0 && (

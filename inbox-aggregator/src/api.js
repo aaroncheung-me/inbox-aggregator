@@ -91,6 +91,24 @@ export async function createNote(body, addons = []) {
   return res.json();
 }
 
+// The AI rewrites the text and adds a reminder, pin and links as it sees fit,
+// on top of any addons picked by hand. Returns { id, message, usage }.
+export async function aiSaveNote(text, addons = []) {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const res = await apiFetch('/notes/ai-save', { method: 'POST', ...jsonBody({ text, addons, timeZone }) });
+  if (!res.ok) await failWith(res, 'AI save failed, try again or use Save');
+  return res.json();
+}
+
+// The AI's suggestions for tidying the notes; nothing is changed.
+// Returns { changes: [{ action, noteId, otherNoteId, title, otherTitle, reason }], order, usage }.
+export async function suggestOrganizing() {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const res = await apiFetch('/notes/organize', { method: 'POST', ...jsonBody({ timeZone }) });
+  if (!res.ok) await failWith(res, 'Organize failed, try again');
+  return res.json();
+}
+
 // changes: { body?, position? }
 export async function updateNote(noteId, changes) {
   const res = await apiFetch(`/notes/${noteId}`, { method: 'PATCH', ...jsonBody(changes) });
@@ -120,6 +138,27 @@ export async function removeNoteAddon(addonId) {
   if (!res.ok) throw new Error('Failed to remove that from the note');
 }
 
+// Recent out-of-credits problems with Anthropic or OpenAI (including ones hit
+// by background syncs): { problems: [{ provider, message, since }] }
+export async function getStatus() {
+  const res = await apiFetch('/status');
+  if (!res.ok) throw new Error('Failed to load status');
+  return res.json();
+}
+
+// ---------- voice ----------
+
+// A recording (Blob from MediaRecorder) -> the words spoken in it.
+export async function transcribeRecording(recording) {
+  const res = await apiFetch('/transcribe', {
+    method: 'POST',
+    headers: { 'Content-Type': recording.type || 'audio/webm' },
+    body: recording,
+  });
+  if (!res.ok) await failWith(res, 'Transcription failed, try again');
+  return (await res.json()).text;
+}
+
 // Basic search, no AI: words plus from:/after:/before:/has:attachment operators.
 export async function searchMessagesBasic(query, { limit = 25, offset = 0 } = {}) {
   const params = new URLSearchParams({ q: query, limit, offset });
@@ -129,9 +168,11 @@ export async function searchMessagesBasic(query, { limit = 25, offset = 0 } = {}
 }
 
 // history: earlier exchanges in this chat, [{ question, answer }], so follow-up questions work.
-// Returns { answer, sources, steps, usage }.
-export async function askAssistant(question, history) {
-  const res = await apiFetch('/ask', { method: 'POST', ...jsonBody({ question, history }) });
+// openMessageId: the email open in the app, so "note this email" knows which one.
+// Returns { answer, sources, steps, createdNotes, usage }.
+export async function askAssistant(question, history, { openMessageId = null } = {}) {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const res = await apiFetch('/ask', { method: 'POST', ...jsonBody({ question, history, openMessageId, timeZone }) });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.error || 'The assistant failed, check the server terminal');

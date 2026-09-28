@@ -8,31 +8,60 @@ function formatDate(isoString) {
   return isoString ? new Date(isoString).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' }) : '';
 }
 
-// Turns [#123] markers in the answer into numbered buttons that open the email.
-function AnswerText({ text, sources, onOpenMessage }) {
-  const numberById = new Map(sources.map((s, i) => [s.id, i + 1]));
-  return text.split(/(\[#\d+\])/g).map((part, i) => {
-    const match = /^\[#(\d+)\]$/.exec(part);
+// Sources are emails ({ kind: 'email', id, subject, sender, received_at })
+// or notes ({ kind: 'note', id, title }); older answers have no kind (emails).
+const sourceKey = source => `${source.kind === 'note' ? 'note' : 'email'}:${source.id}`;
+
+// Turns [#123] (email) and [note 12] markers in the answer into numbered
+// buttons that open what they point at.
+function AnswerText({ text, sources, onOpenSource }) {
+  const numberByKey = new Map(sources.map((source, i) => [sourceKey(source), i + 1]));
+  return text.split(/(\[(?:#|note )\d+\])/g).map((part, i) => {
+    const match = /^\[(#|note )(\d+)\]$/.exec(part);
     if (!match) return <span key={i}>{part}</span>;
 
-    const id = Number(match[1]);
-    const number = numberById.get(id);
+    const key = `${match[1] === '#' ? 'email' : 'note'}:${match[2]}`;
+    const number = numberByKey.get(key);
     if (!number) return null;
+    const source = sources[number - 1];
     return (
-      <button key={i} className="citation" onClick={() => onOpenMessage(id)} title={sources[number - 1].subject || ''}>
+      <button key={i} className="citation" onClick={() => onOpenSource(source)} title={source.subject || source.title || ''}>
         {number}
       </button>
     );
   });
 }
 
-function ChatPanel({ history, loading, error, onOpenMessage }) {
+// Notes the assistant made in this answer, each with Open and Undo.
+function CreatedNotes({ notes, onOpenNote, onUndo }) {
+  return (
+    <div className="created-notes">
+      {notes.map(note => (
+        <div key={note.id} className={`created-note${note.undone ? ' undone' : ''}`}>
+          <span className="created-note-label">{note.undone ? 'Removed note:' : 'Created note:'}</span>
+          <span className="created-note-title">{note.title}</span>
+          {!note.undone && (
+            <span className="created-note-actions">
+              <button className="btn btn-ghost btn-small" onClick={() => onOpenNote(note.id)}>Open</button>
+              <button className="btn btn-ghost btn-small" onClick={() => onUndo(note.id)}>Undo</button>
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ChatPanel({ history, loading, error, onOpenMessage, onOpenNote, onUndoCreatedNote }) {
+  const openSource = source => (source.kind === 'note' ? onOpenNote(source.id) : onOpenMessage(source.id));
+
   if (history.length === 0 && !loading && !error) {
     return (
       <div className="chat-panel chat-empty">
-        <p>Ask a question about your email, for example:</p>
+        <p>Ask about your email and notes, for example:</p>
         <p className="chat-example">"Find my glasses prescription"</p>
-        <p className="chat-example">"Did I hear back from any of the companies I applied to?"</p>
+        <p className="chat-example">"How are my job applications going?", then "save that as a note"</p>
+        <p className="chat-example">With an email open: "note this email, remind me Friday"</p>
         <p className="chat-tip">Just looking for emails from someone? Switch the box to <strong>Search</strong>, it's instant and free.</p>
       </div>
     );
@@ -44,16 +73,33 @@ function ChatPanel({ history, loading, error, onOpenMessage }) {
         <div className="chat-exchange" key={i}>
           <div className="chat-question">{exchange.question}</div>
           <div className="chat-answer">
-            <AnswerText text={exchange.answer} sources={exchange.sources} onOpenMessage={onOpenMessage} />
+            <AnswerText text={exchange.answer} sources={exchange.sources} onOpenSource={openSource} />
           </div>
+
+          {exchange.createdNotes?.length > 0 && (
+            <CreatedNotes
+              notes={exchange.createdNotes}
+              onOpenNote={onOpenNote}
+              onUndo={noteId => onUndoCreatedNote(i, noteId)}
+            />
+          )}
 
           {exchange.sources.length > 0 && (
             <ol className="chat-sources">
               {exchange.sources.map(source => (
-                <li key={source.id}>
-                  <button className="source-link" onClick={() => onOpenMessage(source.id)}>
-                    <span className="source-subject">{source.subject || '(no subject)'}</span>
-                    <span className="source-meta">{source.sender} · {formatDate(source.received_at)}</span>
+                <li key={sourceKey(source)}>
+                  <button className="source-link" onClick={() => openSource(source)}>
+                    {source.kind === 'note' ? (
+                      <>
+                        <span className="source-subject">{source.title}</span>
+                        <span className="source-meta">Your note</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="source-subject">{source.subject || '(no subject)'}</span>
+                        <span className="source-meta">{source.sender} · {formatDate(source.received_at)}</span>
+                      </>
+                    )}
                   </button>
                 </li>
               ))}
@@ -78,7 +124,7 @@ function ChatPanel({ history, loading, error, onOpenMessage }) {
         </div>
       ))}
 
-      {loading && <div className="chat-thinking">Searching your email...</div>}
+      {loading && <div className="chat-thinking">Searching your email and notes...</div>}
       {error && <div className="chat-error">Error: {error}</div>}
     </div>
   );

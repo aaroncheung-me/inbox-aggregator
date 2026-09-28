@@ -165,4 +165,4 @@ function parseSearchQuery(input) {
   return { text: text.replace(/\s+/g, ' ').trim(), filters };
 }
 
-module.exports = { keywordSearch, semanticSearch, hybridSearch, parseSearchQuery, emailKind };
+module.exports = { keywordSearch, semanticSearch, hybridSearch, parseSearchQuery, emailKind, questionKeywords };
