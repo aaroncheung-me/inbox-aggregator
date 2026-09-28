@@ -1,7 +1,8 @@
 {
+  "id": "/",
   "name": "Inbox Aggregator",
   "short_name": "Inbox",
-  "description": "All your email accounts in one inbox, with an AI assistant.",
+  "description": "All your email accounts in one inbox, with notes and an AI assistant.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -11,5 +12,21 @@
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
     { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "New note",
+      "short_name": "Note",
+      "description": "Open the app ready to write a note",
+      "url": "/?action=new-note",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Ask assistant",
+      "short_name": "Ask",
+      "description": "Open the app ready to ask a question",
+      "url": "/?action=ask",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
   ]
 }

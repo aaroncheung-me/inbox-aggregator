@@ -52,6 +52,17 @@ function readConnectResult() {
 }
 
 const connectResult = readConnectResult();
+
+// The installed app's icon shortcuts (see manifest.webmanifest) open
+// /?action=new-note or /?action=ask. Read once at startup and tidy the URL.
+function readLaunchAction() {
+  const action = new URLSearchParams(window.location.search).get('action');
+  if (action !== 'new-note' && action !== 'ask') return null;
+  window.history.replaceState(null, '', window.location.pathname);
+  return action;
+}
+
+const launchAction = readLaunchAction();
 // StrictMode runs effects twice in development; this keeps the startup sync to one run
 let startupSyncStarted = false;
 // Opening the app syncs if the least recently synced account is older than this.
@@ -110,7 +121,8 @@ function App({ userEmail, onSignOut }) {
   const [chatError, setChatError] = useState(null);
 
   // notes: the sidebar shows either the inbox or the notes
-  const [tab, setTab] = useState('inbox');
+  // the "New note" shortcut opens straight onto Notes
+  const [tab, setTab] = useState(launchAction === 'new-note' ? 'notes' : 'inbox');
   const [notes, setNotes] = useState([]);
   const [selectedNoteId, setSelectedNoteId] = useState(null);
   const selectedNote = notes.find(note => note.id === selectedNoteId) || null;
@@ -501,6 +513,8 @@ function App({ userEmail, onSignOut }) {
           />
         )}
         onAsk={handleAsk}
+        focusAskBox={launchAction === 'ask'}
+        focusNoteBox={launchAction === 'new-note'}
         chatCount={chatHistory.length}
         onOpenChat={openChat}
         asking={chatLoading}

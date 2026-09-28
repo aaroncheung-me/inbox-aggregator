@@ -48,6 +48,8 @@ function Sidebar({
   onSuggestOrganizing,
   onApplyOrganizing,
   creditsBanner,
+  focusAskBox = false,
+  focusNoteBox = false,
 }) {
   const accountColors = new Map(accounts.map(a => [a.id, a.color]));
   // Desktop: sync status and accounts sit above the inbox list, sign-out below it.
@@ -102,7 +104,7 @@ function Sidebar({
   return (
     <div className="sidebar">
       {creditsBanner}
-      <AskBar onAsk={onAsk} onSearch={onSearch} asking={asking} />
+      <AskBar onAsk={onAsk} onSearch={onSearch} asking={asking} autoFocus={focusAskBox} />
       {/* phone layout only: on desktop the chat is always beside the list */}
       {chatCount > 0 && (
         <button className="phone-open-chat phone-only" onClick={onOpenChat}>
@@ -125,6 +127,7 @@ function Sidebar({
               onMove={onMoveNote}
               onSuggestOrganizing={onSuggestOrganizing}
               onApplyOrganizing={onApplyOrganizing}
+              autoFocusComposer={focusNoteBox}
             />
           </>
         ) : (

@@ -19,7 +19,10 @@ import { groupNotes, positionBetween } from '../notes';
 // group to reorder. onCreate / onAiCreate(body, addons) save a new note.
 // Organize asks the AI for tidying suggestions (onSuggestOrganizing), which are
 // reviewed here and applied with onApplyOrganizing(changes, order).
-function NotesPanel({ notes, now, selectedNoteId, onSelect, onCreate, onAiCreate, onMove, onSuggestOrganizing, onApplyOrganizing }) {
+function NotesPanel({
+  notes, now, selectedNoteId, onSelect, onCreate, onAiCreate, onMove, onSuggestOrganizing, onApplyOrganizing,
+  autoFocusComposer = false,
+}) {
   const [showDone, setShowDone] = useState(false);
   const [organizing, setOrganizing] = useState(false);
   const [suggestions, setSuggestions] = useState(null);
@@ -78,7 +81,14 @@ function NotesPanel({ notes, now, selectedNoteId, onSelect, onCreate, onAiCreate
 
   return (
     <div className="notes-panel">
-      <NoteComposer notes={notes} onSave={onCreate} onAiSave={onAiCreate} placeholder="Write a note..." className="note-capture" />
+      <NoteComposer
+        notes={notes}
+        onSave={onCreate}
+        onAiSave={onAiCreate}
+        placeholder="Write a note..."
+        className="note-capture"
+        autoFocus={autoFocusComposer}
+      />
 
       {notes.length === 0 && <p className="notes-empty">No notes yet. Write one above.</p>}
 

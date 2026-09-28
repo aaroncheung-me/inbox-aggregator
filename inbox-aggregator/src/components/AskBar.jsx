@@ -20,7 +20,7 @@ const MODES = {
 
 // One box, two modes: ask the AI assistant, or a plain search (free, instant)
 // that lists matching emails in the sidebar.
-function AskBar({ onAsk, onSearch, asking }) {
+function AskBar({ onAsk, onSearch, asking, autoFocus = false }) {
   const [mode, setMode] = useState('ai');
   const [input, setInput] = useState('');
   const current = MODES[mode];
@@ -72,6 +72,7 @@ function AskBar({ onAsk, onSearch, asking }) {
           onChange={e => setInput(e.target.value)}
           placeholder={current.placeholder}
           aria-label={current.ariaLabel}
+          autoFocus={autoFocus}
         />
         <VoiceButton recorder={voice} workingLabel="..." disabled={mode === 'ai' && asking} />
         <button type="submit" className="btn" disabled={mode === 'ai' && asking}>
