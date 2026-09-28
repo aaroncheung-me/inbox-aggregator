@@ -52,8 +52,30 @@ function CreatedNotes({ notes, onOpenNote, onUndo }) {
   );
 }
 
-function ChatPanel({ history, loading, error, onOpenMessage, onOpenNote, onUndoCreatedNote }) {
+// A draft the assistant wrote for the email being written, with a button to put it in.
+function DraftSuggestion({ draft, used, onUse }) {
+  return (
+    <div className="draft-suggestion">
+      <div className="draft-suggestion-label">
+        <span className="ai-tag">AI</span> Draft{draft.subject ? ` with the subject "${draft.subject}"` : ''}
+      </div>
+      <div className="draft-suggestion-text">{draft.body}</div>
+      {used
+        ? <span className="draft-suggestion-used">In your email</span>
+        : <button className="btn btn-small" onClick={onUse}>Use this draft</button>}
+    </div>
+  );
+}
+
+// emptyContent replaces the usual examples when there's nothing yet (the
+// assistant beside the writing screen has its own). onUseDraft(exchangeIndex)
+// is given there too, for drafts the assistant wrote.
+function ChatPanel({ history, loading, error, onOpenMessage, onOpenNote, onUndoCreatedNote, emptyContent = null, onUseDraft = null }) {
   const openSource = source => (source.kind === 'note' ? onOpenNote(source.id) : onOpenMessage(source.id));
+
+  if (history.length === 0 && !loading && !error && emptyContent) {
+    return <div className="chat-panel chat-empty">{emptyContent}</div>;
+  }
 
   if (history.length === 0 && !loading && !error) {
     return (
@@ -75,6 +97,10 @@ function ChatPanel({ history, loading, error, onOpenMessage, onOpenNote, onUndoC
           <div className="chat-answer">
             <AnswerText text={exchange.answer} sources={exchange.sources} onOpenSource={openSource} />
           </div>
+
+          {exchange.draft && onUseDraft && (
+            <DraftSuggestion draft={exchange.draft} used={exchange.draftUsed} onUse={() => onUseDraft(i)} />
+          )}
 
           {exchange.createdNotes?.length > 0 && (
             <CreatedNotes

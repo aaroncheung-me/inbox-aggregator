@@ -21,8 +21,9 @@ function jsonBody(body) {
   return { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
-export async function getMessages({ limit = 25, offset = 0 } = {}) {
-  const res = await apiFetch(`/messages?limit=${limit}&offset=${offset}`);
+// folder: 'inbox' or 'sent'
+export async function getMessages({ limit = 25, offset = 0, folder = 'inbox' } = {}) {
+  const res = await apiFetch(`/messages?limit=${limit}&offset=${offset}&folder=${folder}`);
   if (!res.ok) throw new Error('Failed to load messages');
   return res.json();
 }
@@ -169,13 +170,45 @@ export async function searchMessagesBasic(query, { limit = 25, offset = 0 } = {}
 
 // history: earlier exchanges in this chat, [{ question, answer }], so follow-up questions work.
 // openMessageId: the email open in the app, so "note this email" knows which one.
-// Returns { answer, sources, steps, createdNotes, usage }.
-export async function askAssistant(question, history, { openMessageId = null } = {}) {
+// draft: the email being written, when asking from the writing screen
+//   ({ mode, from, to, cc, subject, body, replyToMessageId }).
+// Returns { answer, sources, steps, createdNotes, draft, usage }.
+export async function askAssistant(question, history, { openMessageId = null, draft = null } = {}) {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const res = await apiFetch('/ask', { method: 'POST', ...jsonBody({ question, history, openMessageId, timeZone }) });
+  const res = await apiFetch('/ask', { method: 'POST', ...jsonBody({ question, history, openMessageId, timeZone, draft }) });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.error || 'The assistant failed, check the server terminal');
   }
   return res.json();
+}
+
+// ---------- sending ----------
+
+// { replyTo }: where replies should go when the sender set a Reply-To, else null.
+export async function getReplyInfo(messageId) {
+  const res = await apiFetch(`/messages/${messageId}/reply-info`);
+  if (!res.ok) return { replyTo: null };
+  return res.json();
+}
+
+// email: { accountId, to, cc, bcc, subject, body, replyToMessageId }. The server
+// waits 15 seconds before sending, so it can be undone. Returns { id, sendAt }.
+export async function sendEmail(email) {
+  const res = await apiFetch('/send', { method: 'POST', ...jsonBody(email) });
+  if (!res.ok) await failWith(res, 'Sending failed, try again');
+  return res.json();
+}
+
+// { status: 'waiting' | 'sending' | 'sent' | 'failed', error }
+export async function getSendStatus(outboxId) {
+  const res = await apiFetch(`/send/${outboxId}`);
+  if (!res.ok) throw new Error('Could not check on that email');
+  return res.json();
+}
+
+// Undo. Throws "Too late to undo..." once it has started sending.
+export async function cancelSend(outboxId) {
+  const res = await apiFetch(`/send/${outboxId}`, { method: 'DELETE' });
+  if (!res.ok) await failWith(res, 'Could not undo, check your Sent folder');
 }

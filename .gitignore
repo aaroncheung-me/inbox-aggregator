@@ -10,5 +10,9 @@ dist/
 # local copies of old versions of files
 backups/
 
+# personal notes kept off GitHub
+CLAUDE.md
+IDEAS.md
+
 *.log
 .DS_Store

@@ -1,5 +1,7 @@
 import AskBar from './AskBar';
 import SyncStatus from './SyncStatus';
+import FolderSwitch from './FolderSwitch';
+import PaneBar from './PaneBar';
 import AccountsPanel from './AccountsPanel';
 import PhoneAccountsBar from './PhoneAccountsBar';
 import MessageList from './MessageList';
@@ -50,11 +52,19 @@ function Sidebar({
   creditsBanner,
   focusAskBox = false,
   focusNoteBox = false,
+  onNewEmail,
+  folder,
+  onFolderChange,
+  // while an email is being written: { title, onBackToDraft, onDiscard, chat }.
+  // The Inbox | Notes row becomes a Discard row, the list below becomes
+  // the email's assistant, and the ask box at the top asks that assistant.
+  drafting = null,
 }) {
-  const accountColors = new Map(accounts.map(a => [a.id, a.color]));
   // Desktop: sync status and accounts sit above the inbox list, sign-out below it.
   // Phone: all of that folds into one bar under the list, so the list screen opens uncluttered.
   const isPhone = useMediaQuery(PHONE_LAYOUT);
+
+  const accountColors = new Map(accounts.map(a => [a.id, a.color]));
 
   const noticeBanner = notice && (
     <div className={`notice notice-${notice.type}`} role="status">
@@ -63,7 +73,7 @@ function Sidebar({
     </div>
   );
 
-  const inboxList = search ? (
+  const searchList = search && (
     <>
       <div className="search-header">
         <span>
@@ -71,7 +81,9 @@ function Sidebar({
             ? 'Searching...'
             : `${search.results.length}${search.hasMore ? '+' : ''} result${search.results.length === 1 ? '' : 's'} for "${search.query}"`}
         </span>
-        <button className="btn btn-ghost btn-small" onClick={onClearSearch}>Back to inbox</button>
+        <button className="btn btn-ghost btn-small" onClick={onClearSearch}>
+          {drafting ? 'Back to assistant' : 'Back to inbox'}
+        </button>
       </div>
       {search.error && <p className="search-empty">{search.error}</p>}
       {!search.loading && !search.error && search.results.length === 0 && (
@@ -88,7 +100,10 @@ function Sidebar({
         total={null}
       />
     </>
-  ) : (
+  );
+
+  // received or sent mail, whichever the switch above the list shows
+  const folderList = (
     <MessageList
       messages={messages}
       accountColors={accountColors}
@@ -98,23 +113,56 @@ function Sidebar({
       loadingMore={loadingMore}
       onLoadMore={onLoadMore}
       total={total}
+      showRecipients={folder === 'sent'}
     />
   );
 
   return (
     <div className="sidebar">
       {creditsBanner}
-      <AskBar onAsk={onAsk} onSearch={onSearch} asking={asking} autoFocus={focusAskBox} />
+      {/* Phone, while writing: this screen is the email's assistant. Its bar
+          mirrors the writing screen's: the switch between them top left,
+          Discard top right. */}
+      {drafting && isPhone && (
+        <PaneBar
+          left={<button className="btn btn-ghost btn-small" onClick={drafting.onBackToDraft}>Back to email</button>}
+          title="Assistant"
+        >
+          <button className="btn btn-ghost btn-small" onClick={drafting.onDiscard}>Discard</button>
+        </PaneBar>
+      )}
+      <AskBar
+        onAsk={onAsk}
+        onSearch={onSearch}
+        asking={asking}
+        autoFocus={focusAskBox}
+        aiPlaceholder={drafting ? 'Ask, or say what to write...' : undefined}
+        topAction={!drafting
+          ? { label: 'New email', onClick: onNewEmail }
+          : isPhone ? undefined : { label: 'Discard', onClick: drafting.onDiscard, className: 'btn-ghost' }}
+      />
       {/* phone layout only: on desktop the chat is always beside the list */}
-      {chatCount > 0 && (
+      {!drafting && chatCount > 0 && (
         <button className="phone-open-chat phone-only" onClick={onOpenChat}>
           View AI conversation ({chatCount}) →
         </button>
       )}
-      <SidebarTabs tab={tab} onChange={onTabChange} dueCount={dueCount} />
+      {/* desktop, while writing: the main pane's bar has "Back to email" when needed */}
+      {drafting ? (
+        !isPhone && (
+          <div className="draft-bar">
+            <span className="draft-bar-title">Writing: {drafting.title}</span>
+          </div>
+        )
+      ) : (
+        <SidebarTabs tab={tab} onChange={onTabChange} dueCount={dueCount} />
+      )}
 
       <div className="sidebar-scroll">
-        {tab === 'notes' ? (
+        {drafting ? (
+          // searching still works while writing; otherwise this is the email's assistant
+          searchList || drafting.chat
+        ) : tab === 'notes' ? (
           <>
             {noticeBanner}
             <NotesPanel
@@ -132,9 +180,13 @@ function Sidebar({
           </>
         ) : (
           <>
+            {/* search results take the list's place, with their own header */}
+            <div className="list-header">
+              {!search && <FolderSwitch folder={folder} onChange={onFolderChange} />}
+              <SyncStatus lastSyncedAt={lastSyncedAt} onSync={onSync} syncing={syncing} />
+            </div>
             {!isPhone && (
               <>
-                <SyncStatus lastSyncedAt={lastSyncedAt} onSync={onSync} syncing={syncing} />
                 <AccountsPanel
                   accounts={accounts}
                   onToggleAccount={onToggleAccount}
@@ -144,7 +196,7 @@ function Sidebar({
               </>
             )}
             {noticeBanner}
-            {inboxList}
+            {searchList || folderList}
           </>
         )}
       </div>
@@ -155,9 +207,6 @@ function Sidebar({
           onToggleAccount={onToggleAccount}
           onChangeColor={onChangeAccountColor}
           onAccountConnected={onAccountConnected}
-          lastSyncedAt={lastSyncedAt}
-          onSync={onSync}
-          syncing={syncing}
           userEmail={userEmail}
           onSignOut={onSignOut}
         />

@@ -1,5 +1,6 @@
 import { timeAgo } from '../format';
 
+// "synced 5m ago  [Sync now]", at the right of the inbox's list header
 function SyncStatus({ lastSyncedAt, onSync, syncing }) {
   return (
     <div className="sync-status">

@@ -1,6 +1,15 @@
 import { senderName, shortDate } from '../format';
+import { splitAddresses } from '../compose';
 
-function MessageList({ messages, accountColors, selectedId, onSelect, hasMore, loadingMore, onLoadMore, total }) {
+// '"Ann" <a@x.com>, b@y.com' -> 'To: Ann +1'
+function recipientsLabel(recipients) {
+  const list = splitAddresses(recipients);
+  if (!list.length) return 'To: (nobody)';
+  return `To: ${senderName(list[0])}${list.length > 1 ? ` +${list.length - 1}` : ''}`;
+}
+
+// showRecipients: for sent mail, the people it went to instead of the sender
+function MessageList({ messages, accountColors, selectedId, onSelect, hasMore, loadingMore, onLoadMore, total, showRecipients = false }) {
   return (
     <div>
       {messages.map(m => (
@@ -11,7 +20,7 @@ function MessageList({ messages, accountColors, selectedId, onSelect, hasMore, l
           onClick={() => onSelect(m.id)}
         >
           <div className="message-list-item-top">
-            <span className="sender">{senderName(m.sender)}</span>
+            <span className="sender">{showRecipients ? recipientsLabel(m.to_recipients) : senderName(m.sender)}</span>
             <span className="date">{shortDate(m.received_at)}</span>
           </div>
           <div className="subject">{m.subject || '(no subject)'}</div>

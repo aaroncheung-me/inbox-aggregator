@@ -70,11 +70,103 @@ button {
   overflow-y: auto;
 }
 
+// The main pane: a top bar that stays put (PaneBar) over a scrolling body.
+// Both pad their sides so their contents share one centered column, at most
+// 680px wide, while the scrollbar stays at the pane's edge.
+$pane-column: 680px;
+
 .main-pane {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pane-bar {
+  flex-shrink: 0;
+  padding: $space-2 max(#{$space-6}, calc((100% - #{$pane-column}) / 2));
+  border-bottom: 1px solid $border;
+  background: $surface;
+}
+
+.pane-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  min-height: 32px;
+}
+
+.pane-back {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 13px;
+  color: $accent;
+  white-space: nowrap;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.pane-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+// the page's actions, at the right end of the bar
+.pane-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex-shrink: 0;
+}
+
+.pane-body {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: $space-8 $space-6;
+  padding: $space-6 max(#{$space-6}, calc((100% - #{$pane-column}) / 2)) $space-8;
+}
+
+// a button opening a short list of actions ("More", "+ Add")
+.action-menu {
+  position: relative;
+}
+
+.action-menu-options {
+  position: absolute;
+  top: calc(100% + #{$space-1});
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: $space-1 0;
+  border: 1px solid $border;
+  border-radius: 6px;
+  background: $surface;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+
+  button {
+    padding: $space-2 $space-3;
+    border: none;
+    background: none;
+    text-align: left;
+    font-size: 13px;
+    color: $text-primary;
+
+    &:hover {
+      background: $accent-soft;
+    }
+  }
 }
 
 // ---------- ask bar (sticky, top of sidebar) ----------
@@ -85,6 +177,12 @@ button {
   gap: $space-2;
   padding: $space-3 $space-4 $space-4;
   border-bottom: 1px solid $border;
+}
+
+.ask-bar-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .mode-toggle {
@@ -177,13 +275,26 @@ button {
 }
 
 // ---------- sync status ----------
-.sync-status {
+// Received | Sent on the left, sync status on the right
+.list-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: $space-3 $space-4;
+  gap: $space-2;
+  padding: $space-2 $space-4;
   border-bottom: 1px solid $border;
   background: $accent-soft;
+}
+
+.folder-switch {
+  background: $bg;
+}
+
+.sync-status {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  margin-left: auto;
   font-size: 12px;
   color: $text-secondary;
 }
@@ -840,21 +951,6 @@ button {
   white-space: nowrap;
 }
 
-.back-link {
-  display: block;
-  max-width: 680px;
-  margin: 0 auto $space-4;
-  padding: 0;
-  border: none;
-  background: none;
-  font-size: 13px;
-  color: $accent;
-
-  &:hover {
-    text-decoration: underline;
-  }
-}
-
 .chat-thinking {
   color: $text-secondary;
   font-style: italic;
@@ -919,6 +1015,225 @@ button {
     line-height: 1.6;
     font-size: 14px;
   }
+}
+
+.email-detail .meta-recipients {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+// ---------- writing an email ----------
+.compose {
+  max-width: 680px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+}
+
+.compose-fields {
+  border: 1px solid $border;
+  border-radius: 6px;
+  background: $surface;
+}
+
+.compose-row {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  padding: 0 $space-3;
+
+  & + & {
+    border-top: 1px solid $border;
+  }
+
+  label {
+    width: 56px;
+    flex-shrink: 0;
+    font-size: 13px;
+    color: $text-secondary;
+  }
+
+  input,
+  select {
+    flex: 1;
+    min-width: 0;
+    padding: $space-2 0;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 14px;
+    color: $text-primary;
+
+    &:focus {
+      outline: none;
+    }
+  }
+}
+
+.compose-ccbcc {
+  border: none;
+  background: none;
+  padding: $space-1;
+  font-size: 12px;
+  color: $accent;
+}
+
+.compose-ai {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-2 $space-3;
+  border-radius: 6px;
+  background: $accent-soft;
+  font-size: 13px;
+}
+
+.compose-body {
+  min-height: 260px;
+  resize: vertical;
+  padding: $space-3;
+  border: 1px solid $border;
+  border-radius: 6px;
+  background: $surface;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  color: $text-primary;
+
+  &:focus {
+    outline: none;
+    border-color: $accent;
+  }
+}
+
+.compose-quoted-toggle summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: $text-secondary;
+}
+
+.compose-quoted {
+  margin-top: $space-2;
+  padding-left: $space-3;
+  border-left: 2px solid $border;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.5;
+  color: $text-secondary;
+}
+
+.compose-note {
+  margin: 0;
+  font-size: 13px;
+  color: $text-secondary;
+}
+
+// ---------- the assistant beside the writing screen ----------
+// replaces the Inbox | Sent | Notes row while writing
+.draft-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  min-height: 41px;
+  padding: $space-1 $space-3 $space-1 $space-4;
+  border-bottom: 1px solid $border;
+
+  .draft-bar-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+  }
+}
+
+.draft-assistant-chat {
+  padding: $space-4;
+
+  .chat-question {
+    font-size: 14px;
+  }
+
+  .chat-answer {
+    font-size: 14px;
+  }
+
+  .chat-exchange {
+    margin-bottom: $space-6;
+  }
+}
+
+.draft-suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: $space-2;
+  margin: $space-3 0;
+  padding: $space-3;
+  border: 1px solid $border;
+  border-radius: 6px;
+  background: $surface;
+}
+
+.draft-suggestion-label {
+  font-size: 12px;
+  color: $text-secondary;
+}
+
+.draft-suggestion-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.draft-suggestion-used {
+  font-size: 12px;
+  color: $text-secondary;
+}
+
+// after pressing Send: the countdown with Undo
+.sending-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(#{$space-6} + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $space-3;
+  max-width: calc(100vw - #{$space-4 * 2});
+  padding: $space-2 $space-4;
+  border-radius: 8px;
+  background: $text-primary;
+  color: #fff;
+  font-size: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+
+  .btn {
+    background: #fff;
+    color: $text-primary;
+  }
+
+  .notice-dismiss {
+    color: #fff;
+  }
+
+  &.failed {
+    background: $danger;
+  }
+}
+
+.sending-bar-error {
+  width: 100%;
+  font-size: 12px;
 }
 
 // ---------- Inbox | Notes switch ----------
@@ -1205,9 +1520,8 @@ button {
 }
 
 // ---------- note view ----------
-.note-detail {
-  max-width: 680px;
-  margin: 0 auto;
+.note-detail .note-body {
+  margin-bottom: $space-3;
 }
 
 .note-body {
@@ -1229,11 +1543,11 @@ button {
   }
 }
 
+// in the note's top bar
 .save-state {
-  margin: $space-1 0 $space-3;
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 400;
   color: $text-secondary;
-  text-align: right;
 
   &.error {
     color: $danger;
@@ -1403,14 +1717,6 @@ button.addon-chip-main:hover {
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.04em;
-}
-
-.note-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: $space-2;
 }
 
 .add-addon-options {
@@ -1775,17 +2081,24 @@ $sticky-edge: #EADC8A;
     display: none;
   }
 
-  .main-pane {
-    padding: $space-2 $space-4 $space-6;
+  .pane-bar {
+    padding: $space-1 $space-4;
   }
 
-  .phone-back {
+  .pane-bar-inner {
     min-height: 44px;
-    padding: 0;
-    border: none;
-    background: none;
+  }
+
+  .pane-back {
     font-size: 15px;
-    color: $accent;
+  }
+
+  .pane-body {
+    padding: $space-4 $space-4 $space-6;
+  }
+
+  .desktop-only {
+    display: none !important;
   }
 
   .phone-open-chat {
@@ -1800,14 +2113,11 @@ $sticky-edge: #EADC8A;
     color: $accent;
   }
 
-  .back-link {
-    min-height: 40px;
-    margin-bottom: $space-2;
-    font-size: 15px;
-  }
-
   // iOS zooms the page when focusing a field with text under 16px
   .ask-bar-row input,
+  .compose-row input,
+  .compose-row select,
+  .compose-body,
   .field input,
   .note-capture textarea,
   .note-body,

@@ -5,7 +5,14 @@ const cors = require('cors');
 
 const supabase = require('./lib/supabase');
 const { getKey } = require('./lib/crypto');
-const { listAccounts, listAllAccounts, getAccount, saveConnectedAccount, updateAccountSettings } = require('./lib/accounts');
+const {
+  listAccounts,
+  listAllAccounts,
+  getAccount,
+  getCredentials,
+  saveConnectedAccount,
+  updateAccountSettings,
+} = require('./lib/accounts');
 const { embedPending } = require('./lib/embeddings');
 const { keywordSearch, parseSearchQuery } = require('./lib/search');
 const { askAssistant } = require('./lib/assistant');
@@ -25,6 +32,8 @@ const {
   removeAddon,
 } = require('./lib/notes');
 const { syncAccount, backfillAccount } = require('./lib/sync');
+const { queueEmail, cancelEmail, emailStatus, sendDue } = require('./lib/outbox');
+const { connectorFor } = require('./connectors');
 const { UserError } = require('./lib/errors');
 const { requireUser, createConnectState, readConnectState } = require('./lib/auth');
 const gmail = require('./connectors/gmail');
@@ -104,6 +113,8 @@ async function runBackgroundSync() {
 
 app.post('/cron/sync', (req, res) => {
   if (!cronSecretMatches(req.get('x-cron-secret'))) return res.status(401).send('Unauthorized');
+  // catches any email left waiting by a server restart
+  sendDue().catch(err => console.error('Sending overdue email failed:', err));
   // still a success for the scheduler: the previous run is doing the work
   if (backgroundSyncRunning) return res.status(202).json({ started: false, reason: 'previous run still going' });
 
@@ -245,7 +256,11 @@ app.post('/embed/:accountId', async (req, res) => {
 
 // ---------- messages ----------
 
-// Unified inbox across all shown accounts, or one of them with ?accountId=
+// Unified inbox across all shown accounts, or one of them with ?accountId=.
+// ?folder=sent lists sent mail instead. The inbox is everything except spam,
+// trash and mail that was only sent: archived Gmail mail stays in it, and an
+// email between two of your own accounts shows under Sent from one and here,
+// as received, in the other.
 app.get('/messages', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 25, 100);
   const offset = parseInt(req.query.offset) || 0;
@@ -254,10 +269,17 @@ app.get('/messages', async (req, res) => {
   if (req.query.accountId) accountIds = accountIds.filter(id => id === Number(req.query.accountId));
   if (!accountIds.length) return res.json({ messages: [], total: 0, limit, offset });
 
-  const { data, error, count } = await supabase
+  let query = supabase
     .from('messages')
-    .select('id, account_id, sender, subject, snippet, received_at, is_read, has_attachments', { count: 'exact' })
-    .in('account_id', accountIds)
+    .select('id, account_id, sender, to_recipients, subject, snippet, received_at, is_read, has_attachments', { count: 'exact' })
+    .in('account_id', accountIds);
+  query = req.query.folder === 'sent'
+    ? query.contains('labels', ['SENT'])
+    : query
+      .or('labels.cs.{INBOX},labels.not.cs.{SENT}')
+      .not('labels', 'ov', '{SPAM,TRASH}');
+
+  const { data, error, count } = await query
     .order('received_at', { ascending: false, nullsFirst: false })
     .range(offset, offset + limit - 1);
 
@@ -305,6 +327,56 @@ app.get('/messages/:messageId', async (req, res) => {
 
   // the notes stuck to this email
   res.json({ ...data, notes: await notesForMessage(req.userId, data.id) });
+});
+
+// What replying needs that isn't stored: { replyTo } (the address replies
+// should go to, when the sender asked for a different one), or null when unknown.
+app.get('/messages/:messageId/reply-info', async (req, res) => {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('account_id, external_id')
+    .eq('id', req.params.messageId)
+    .maybeSingle();
+  if (error) throw error;
+
+  const account = data && await getAccount(req.userId, data.account_id);
+  if (!account) return res.status(404).send('Message not found');
+
+  try {
+    const headers = await connectorFor(account.provider).getReplyHeaders({
+      credentials: await getCredentials(account),
+      messageExternalId: data.external_id,
+    });
+    res.json({ replyTo: headers.replyTo });
+  } catch (err) {
+    // replying still works without it, to the sender
+    console.error(`Looking up reply details for message ${req.params.messageId} failed:`, err.message);
+    res.json({ replyTo: null });
+  }
+});
+
+// ---------- sending ----------
+
+// Body: { accountId, to, cc, bcc, subject, body, replyToMessageId? }, addresses
+// comma-separated. The email waits 15 seconds (so it can be undone), then sends.
+// Returns { id, sendAt }; 400 with { error } when something needs fixing.
+app.post('/send', withUserErrors(async (req, res) => {
+  res.status(201).json(await queueEmail(req.userId, req.body || {}));
+}));
+
+// { status: 'waiting' | 'sending' | 'sent' | 'failed', error }
+app.get('/send/:outboxId', async (req, res) => {
+  const status = await emailStatus(req.userId, req.params.outboxId);
+  if (!status) return res.status(404).send('Not found');
+  res.json(status);
+});
+
+// Undo. 409 when it's too late (already sending or sent).
+app.delete('/send/:outboxId', async (req, res) => {
+  if (!await cancelEmail(req.userId, req.params.outboxId)) {
+    return res.status(409).json({ error: 'Too late to undo, it has already been sent' });
+  }
+  res.status(204).end();
 });
 
 // ---------- notes ----------
@@ -420,9 +492,26 @@ app.delete('/note-addons/:addonId', async (req, res) => {
 
 // ---------- AI assistant ----------
 
+// The email being written, when the assistant is asked from the writing screen:
+// { mode: 'new' | 'reply' | 'forward', from, to, cc, subject, body, replyToMessageId? }
+function readDraft(draft) {
+  if (!draft || typeof draft !== 'object') return null;
+  const text = (value, max) => (typeof value === 'string' ? value.slice(0, max) : '');
+  return {
+    mode: ['new', 'reply', 'forward'].includes(draft.mode) ? draft.mode : 'new',
+    from: text(draft.from, 200),
+    to: text(draft.to, 2000),
+    cc: text(draft.cc, 2000),
+    subject: text(draft.subject, 500),
+    body: text(draft.body, 10000),
+    replyToMessageId: Number(draft.replyToMessageId) || null,
+  };
+}
+
 // Body: { question, history?: [{ question, answer }] (earlier exchanges in this chat, oldest first),
-//         openMessageId? (the email open in the app, for "note this email"), timeZone? }
-// Returns { answer, sources, steps, createdNotes, usage }; see lib/assistant.js.
+//         openMessageId? (the email open in the app, for "note this email"), timeZone?,
+//         draft? (the email being written, see readDraft) }
+// Returns { answer, sources, steps, createdNotes, draft, usage }; see lib/assistant.js.
 app.post('/ask', async (req, res) => {
   const question = typeof req.body?.question === 'string' ? req.body.question.trim().slice(0, 1000) : '';
   if (!question) return res.status(400).json({ error: 'Ask a question first' });
@@ -442,6 +531,7 @@ app.post('/ask', async (req, res) => {
       sources: [],
       steps: [],
       createdNotes: [],
+      draft: null,
       usage: null,
     });
   }
@@ -455,6 +545,7 @@ app.post('/ask', async (req, res) => {
       history,
       openMessageId: Number(req.body.openMessageId) || null,
       timeZone: req.body.timeZone,
+      draft: readDraft(req.body.draft),
     });
     noteProviderSuccess('anthropic');
     res.json(answer);
@@ -505,4 +596,6 @@ app.use((err, req, res, next) => {
 
 app.listen(process.env.PORT, () => {
   console.log(`Server listening on port ${process.env.PORT}`);
+  // email that was waiting when the server last stopped
+  sendDue().catch(err => console.error('Sending overdue email failed:', err));
 });

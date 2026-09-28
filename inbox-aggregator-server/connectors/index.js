@@ -9,6 +9,9 @@
 //     -> { messages, nextPageToken }
 //   downloadAttachment({ credentials, messageExternalId, attachmentExternalId, maxBytes })
 //     -> Buffer
+//   getReplyHeaders({ credentials, messageExternalId })
+//     -> { messageId, references, replyTo }         what a reply to that message needs
+//   send({ credentials, mail, threadId })           mail: nodemailer message options
 //   isRateLimitError(err)
 const gmail = require('./gmail');
 const imap = require('./imap');

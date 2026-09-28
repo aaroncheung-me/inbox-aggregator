@@ -96,7 +96,31 @@ const TOOLS = [
   },
 ];
 
-function systemPrompt(timeZone) {
+// Only offered while the user is writing an email.
+const WRITE_DRAFT_TOOL = {
+  name: 'write_draft',
+  description:
+    'Write or rewrite the email the user is writing. Only when they ask you to draft, write, rewrite, shorten or ' +
+    'otherwise change it. They see it with a button to use it, which replaces their draft, so give the whole ' +
+    'email from greeting to sign-off, but not the quoted original.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      body: { type: 'string', description: 'The complete email text, plain text.' },
+      subject: {
+        type: 'string',
+        description: 'A new subject, only when they asked for one or the draft has none. Empty to keep theirs.',
+      },
+    },
+    required: ['body'],
+  },
+};
+
+const DRAFTING_PROMPT = `
+
+The user is writing an email right now; it is shown with their request. While writing, requests come without initial search results: use the tools when a request needs facts from their email or notes. Help with it only in the way they ask: answer questions about their email and notes as usual, or, when they ask you to write or change the email, call write_draft once with the complete text and then say in a sentence what you wrote rather than repeating it. Never write or change the email unless they ask. Write plain text in the user's own voice, matching the tone of emails they sent if you've seen any. Don't invent facts, dates or promises: put a clear [placeholder] where something is unknown.`;
+
+function systemPrompt(timeZone, drafting) {
   return `You help the user with their own email and notes. It is now ${describeNow(timeZone)} in the user's time zone (${timeZone}).
 
 Each question comes with initial search results. If they answer it, answer right away without using tools. Otherwise use the tools: search again with different wording, likely senders or related businesses, open promising emails, and read attachments when the answer is probably inside a document. You can make at most ${MAX_TOOL_CALLS} tool calls.
@@ -114,7 +138,7 @@ Questions about the user's own things ("my headphones", "my order", "my appointm
 When you answer:
 - Be brief and direct.
 - Cite each email your answer relies on with its id in brackets, like [#123], and each note like [note 12], right after the fact it supports.
-- Only state what the emails and notes actually show. If you can't find it, say so and briefly say what you searched for.`;
+- Only state what the emails and notes actually show. If you can't find it, say so and briefly say what you searched for.${drafting ? DRAFTING_PROMPT : ''}`;
 }
 
 // ---------- formatting results for Claude ----------
@@ -250,6 +274,16 @@ async function runTool(name, input, ctx) {
     return { content, step: `Searched your notes for "${input.query}": ${count} result${count === 1 ? '' : 's'}` };
   }
 
+  if (name === 'write_draft') {
+    if (!ctx.drafting) return { content: 'There is no email being written.', step: null, isError: true };
+    if (!input.body?.trim()) return { content: 'The draft needs some text.', step: null, isError: true };
+    ctx.draft = { body: input.body.trim(), subject: input.subject?.trim() || null };
+    return {
+      content: "Draft ready. The user sees it with a button to use it; don't repeat it in your answer.",
+      step: 'Wrote a draft',
+    };
+  }
+
   if (name === 'create_note') {
     if (!input.text?.trim()) return { content: 'The note needs some text.', step: null, isError: true };
     const { id, messages } = await saveAiNote({
@@ -362,11 +396,27 @@ async function openEmailLine(messageId, ctx) {
   return `The user has this email open: [#${m.id}] ${m.received_at?.slice(0, 10) || ''} | From: ${m.sender} | Subject: ${m.subject || '(no subject)'}\n\n`;
 }
 
+const DRAFT_MODES = {
+  new: 'a new email',
+  reply: 'a reply to the email above',
+  forward: 'forwarding the email above',
+};
+
+// The email being written, as shown to Claude with the question.
+function draftBlock(draft) {
+  return `The user is writing ${DRAFT_MODES[draft.mode]} from ${draft.from || 'one of their accounts'}.\n` +
+    `To: ${draft.to || '(nobody yet)'}\n` +
+    (draft.cc ? `Cc: ${draft.cc}\n` : '') +
+    `Subject: ${draft.subject || '(none yet)'}\n` +
+    `Their draft so far:\n"""\n${draft.body.trim() || '(empty)'}\n"""\n\n`;
+}
+
 // history: earlier exchanges in this chat, [{ question, answer }], oldest first.
 // ownAddresses: the user's connected email addresses, to spot emails they sent.
 // openMessageId: the email open in the app, if any. timeZone: the user's, for reminders.
-// Returns { answer, sources, steps, createdNotes: [{ id, title }], usage }.
-async function askAssistant({ userId, accountIds, ownAddresses = [], question, history = [], openMessageId = null, timeZone }) {
+// draft: the email being written, when asked from the writing screen (see readDraft in index.js).
+// Returns { answer, sources, steps, createdNotes: [{ id, title }], draft: { body, subject } | null, usage }.
+async function askAssistant({ userId, accountIds, ownAddresses = [], question, history = [], openMessageId = null, timeZone, draft = null }) {
   const recentHistory = history.slice(-MAX_HISTORY_TURNS);
   const ctx = {
     userId,
@@ -377,19 +427,33 @@ async function askAssistant({ userId, accountIds, ownAddresses = [], question, h
     seenNotes: new Set(), // likewise for notes
     notes: await listNotes(userId),
     created: [],          // notes made by create_note this turn
+    drafting: Boolean(draft),
+    draft: null,          // set by write_draft
   };
   const steps = [];
   const usage = { inputTokens: 0, outputTokens: 0 };
 
   await seedFromHistory(recentHistory, ctx);
-  const openEmail = await openEmailLine(openMessageId, ctx);
+  // when replying or forwarding, "this email" is the one being answered, and
+  // its text comes along so the assistant needn't look it up
+  const answering = draft?.replyToMessageId || null;
+  let openEmail = await openEmailLine(answering || openMessageId, ctx);
+  if (answering && openEmail) {
+    const { content } = await runTool('read_email', { email_id: answering }, ctx);
+    openEmail = `The email being answered:\n${content}\n\n`;
+  }
+  if (draft) openEmail += draftBlock(draft);
 
-  const initial = await hybridSearch(userId, accountIds, question, { limit: INITIAL_RESULTS, ownAddresses });
+  // While writing, requests are mostly instructions ("make it shorter"), not
+  // searches, so there's no search up front; the tools are there if needed.
+  const initial = ctx.drafting ? [] : await hybridSearch(userId, accountIds, question, { limit: INITIAL_RESULTS, ownAddresses });
   initial.forEach(m => ctx.seen.add(m.id));
-  const initialNotes = searchNotes(ctx.notes, questionKeywords(question)).slice(0, INITIAL_NOTES);
+  const initialNotes = ctx.drafting ? [] : searchNotes(ctx.notes, questionKeywords(question)).slice(0, INITIAL_NOTES);
   initialNotes.forEach(note => ctx.seenNotes.add(note.id));
-  steps.push(`Searched for your question: ${initial.length} email${initial.length === 1 ? '' : 's'}` +
-    (initialNotes.length ? `, ${initialNotes.length} note${initialNotes.length === 1 ? '' : 's'}` : ''));
+  if (!ctx.drafting) {
+    steps.push(`Searched for your question: ${initial.length} email${initial.length === 1 ? '' : 's'}` +
+      (initialNotes.length ? `, ${initialNotes.length} note${initialNotes.length === 1 ? '' : 's'}` : ''));
+  }
 
   const messages = [];
   for (const turn of recentHistory) {
@@ -402,7 +466,9 @@ async function askAssistant({ userId, accountIds, ownAddresses = [], question, h
   const noteResults = initialNotes.length ? `\n\nNotes that may be relevant:\n${formatNotes(initialNotes)}` : '';
   messages.push({
     role: 'user',
-    content: `${openEmail}Question: ${question}\n\nInitial search results:\n\n${emailResults}${noteResults}`,
+    content: ctx.drafting
+      ? `${openEmail}Request: ${question}`
+      : `${openEmail}Question: ${question}\n\nInitial search results:\n\n${emailResults}${noteResults}`,
   });
 
   let toolCalls = 0;
@@ -410,8 +476,8 @@ async function askAssistant({ userId, accountIds, ownAddresses = [], question, h
     const response = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 2048,
-      system: systemPrompt(ctx.timeZone),
-      tools: TOOLS,
+      system: systemPrompt(ctx.timeZone, ctx.drafting),
+      tools: ctx.drafting ? [...TOOLS, WRITE_DRAFT_TOOL] : TOOLS,
       // once the limit is hit, the next reply has to be the answer
       ...(toolCalls >= MAX_TOOL_CALLS && { tool_choice: { type: 'none' } }),
       messages,
@@ -422,7 +488,7 @@ async function askAssistant({ userId, accountIds, ownAddresses = [], question, h
     const toolUses = response.content.filter(block => block.type === 'tool_use');
     if (response.stop_reason !== 'tool_use' || !toolUses.length) {
       const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-      const fallback = ctx.created.length ? 'Done.' : "I couldn't come up with an answer to that.";
+      const fallback = ctx.created.length || ctx.draft ? 'Done.' : "I couldn't come up with an answer to that.";
       const { answer, sources } = await collectSources(text || fallback, ctx);
       const [inputPrice, outputPrice] = PRICES[MODEL] || [];
       return {
@@ -430,6 +496,7 @@ async function askAssistant({ userId, accountIds, ownAddresses = [], question, h
         sources,
         steps,
         createdNotes: ctx.created,
+        draft: ctx.draft,
         usage: {
           model: MODEL,
           ...usage,

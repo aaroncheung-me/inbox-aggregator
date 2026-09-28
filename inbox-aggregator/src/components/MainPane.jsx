@@ -1,10 +1,17 @@
 import ChatPanel from './ChatPanel';
+import ComposeView from './ComposeView';
 import EmailDetail from './EmailDetail';
 import NoteDetail from './NoteDetail';
+import PaneBar from './PaneBar';
 
-// Shows one of: the selected email, the selected note, or the assistant chat.
+// Shows one of: the email being written, the selected note, the selected email,
+// or the assistant chat. Each starts with the same top bar (PaneBar), whose left
+// end is worked out here: on a phone, back to the list; on desktop, back to the
+// email being written or to the assistant, when there's one to go back to.
 // noteActions: { onSaveBody, onDelete, onAddAddon, onUpdateAddon, onRemoveAddon, onOpenNote, onCreate, onAiCreate }
 // aiHeadsUp: { noteId, message } from the last AI save, shown on that note.
+// compose: the email being written, or null: { draft, visible, accounts, sending,
+//   onChange, onSend, onDiscard, onUndoAiDraft, onShowAssistant, onShow }.
 function MainPane({
   selectedMessageId,
   selectedMessage,
@@ -25,12 +32,43 @@ function MainPane({
   onCloseMessage,
   onBackToList,
   backLabel,
+  onReply,
+  compose,
 }) {
+  let desktopBack = null;
+  if (compose) {
+    desktopBack = { label: '← Back to email', onClick: compose.onShow };
+  } else if (selectedMessageId != null && !selectedNote && chatHistory.length > 0) {
+    desktopBack = { label: '← Assistant', onClick: onCloseMessage };
+  }
+  const back = (
+    <>
+      <button className="pane-back phone-only" onClick={onBackToList}>← {backLabel}</button>
+      {desktopBack && (
+        <button className="pane-back desktop-only" onClick={desktopBack.onClick}>{desktopBack.label}</button>
+      )}
+    </>
+  );
+
   let content;
-  if (selectedNote) {
+  if (compose?.visible) {
+    content = (
+      <ComposeView
+        draft={compose.draft}
+        accounts={compose.accounts}
+        sending={compose.sending}
+        onChange={compose.onChange}
+        onSend={compose.onSend}
+        onDiscard={compose.onDiscard}
+        onUndoAiDraft={compose.onUndoAiDraft}
+        onShowAssistant={compose.onShowAssistant}
+      />
+    );
+  } else if (selectedNote) {
     content = (
       <NoteDetail
         key={selectedNote.id}
+        back={back}
         note={selectedNote}
         notes={notes}
         now={now}
@@ -47,43 +85,40 @@ function MainPane({
     );
   } else if (selectedMessageId != null) {
     content = (
-      <>
-        {chatHistory.length > 0 && (
-          <button className="back-link" onClick={onCloseMessage}>← Back to assistant</button>
-        )}
-        <EmailDetail
-          message={selectedMessage}
-          account={selectedAccount}
-          loading={messageLoading}
-          error={messageError}
-          now={now}
-          allNotes={notes}
-          onOpenNote={noteActions.onOpenNote}
-          onCreateNote={noteActions.onCreate}
-          onAiCreateNote={noteActions.onAiCreate}
-        />
-      </>
+      <EmailDetail
+        key={selectedMessageId}
+        back={back}
+        message={selectedMessage}
+        account={selectedAccount}
+        loading={messageLoading}
+        error={messageError}
+        now={now}
+        allNotes={notes}
+        onOpenNote={noteActions.onOpenNote}
+        onCreateNote={noteActions.onCreate}
+        onAiCreateNote={noteActions.onAiCreate}
+        onReply={onReply}
+      />
     );
   } else {
     content = (
-      <ChatPanel
-        history={chatHistory}
-        loading={chatLoading}
-        error={chatError}
-        onOpenMessage={onOpenMessage}
-        onOpenNote={noteActions.onOpenNote}
-        onUndoCreatedNote={onUndoCreatedNote}
-      />
+      <>
+        <PaneBar left={back} title="Assistant" />
+        <div className="pane-body">
+          <ChatPanel
+            history={chatHistory}
+            loading={chatLoading}
+            error={chatError}
+            onOpenMessage={onOpenMessage}
+            onOpenNote={noteActions.onOpenNote}
+            onUndoCreatedNote={onUndoCreatedNote}
+          />
+        </div>
+      </>
     );
   }
 
-  return (
-    <div className="main-pane">
-      {/* phone layout only: the list is a separate screen there */}
-      <button className="phone-back phone-only" onClick={onBackToList}>← {backLabel}</button>
-      {content}
-    </div>
-  );
+  return <div className="main-pane">{content}</div>;
 }
 
 export default MainPane;

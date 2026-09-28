@@ -1,11 +1,16 @@
 const { google } = require('googleapis');
 const { htmlToText } = require('../lib/text');
+const { buildRawEmail, messageIds } = require('../lib/mime');
+const { UserError } = require('../lib/errors');
 
 // Where Google sends the browser after sign-in: this server's /auth/callback.
 // Must exactly match an "Authorized redirect URI" in Google Cloud.
 const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3001/auth/callback';
+// Accounts connected before gmail.send was added don't have it until they're
+// connected again; sending from them fails with a message saying so.
 const SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/userinfo.email',
 ];
 
@@ -304,9 +309,58 @@ async function downloadAttachment({ credentials, messageExternalId, attachmentEx
   return Buffer.from(data.data, 'base64url');
 }
 
+// ---------- sending ----------
+
+// The original's headers a reply needs: { messageId, references: [...], replyTo }.
+// Looked up when needed rather than stored, so it works for any email.
+async function getReplyHeaders({ credentials, messageExternalId }) {
+  const gmail = gmailClient(credentials);
+  const { data } = await gmail.users.messages.get({
+    userId: 'me',
+    id: messageExternalId,
+    format: 'metadata',
+    metadataHeaders: ['Message-ID', 'References', 'Reply-To'],
+  });
+  const headers = data.payload?.headers || [];
+  const header = name => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
+
+  return {
+    messageId: messageIds(header('Message-ID'))[0] || null,
+    references: messageIds(header('References')),
+    replyTo: header('Reply-To'),
+  };
+}
+
+function isMissingSendPermission(err) {
+  return err.code === 403 && /insufficient.*scope|insufficient permission/i.test(err.message || '');
+}
+
+// mail: nodemailer message options. threadId files a reply in the original's
+// conversation (Gmail's own thread id, only valid in the account that received it).
+async function send({ credentials, mail, threadId }) {
+  // Without a From header Gmail fills in the account's own name and address,
+  // the same way sending from Gmail itself does.
+  const { from, ...rest } = mail;
+  const raw = await buildRawEmail(rest, { keepBcc: true });
+
+  try {
+    await gmailClient(credentials).users.messages.send({
+      userId: 'me',
+      requestBody: { raw: raw.toString('base64url'), ...(threadId && { threadId }) },
+    });
+  } catch (err) {
+    if (isMissingSendPermission(err)) {
+      throw new UserError(`${from} was connected before sending was added. Connect it again (Add account, Gmail) to allow sending.`);
+    }
+    throw err;
+  }
+}
+
 module.exports = {
   provider: 'gmail',
   downloadAttachment,
+  getReplyHeaders,
+  send,
   getAuthUrl,
   handleCallback,
   fetchNew,

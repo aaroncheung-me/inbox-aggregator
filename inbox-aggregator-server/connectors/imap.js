@@ -1,6 +1,8 @@
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
+const nodemailer = require('nodemailer');
 const { htmlToText, makeSnippet } = require('../lib/text');
+const { buildRawEmail } = require('../lib/mime');
 const { UserError } = require('../lib/errors');
 const { assertPublicHost } = require('../lib/hostCheck');
 
@@ -233,10 +235,10 @@ async function fetchPage({ credentials, pageToken }) {
   });
 }
 
-// Downloads one attachment's bytes (decoded). messageExternalId is
-// "<folder path>:<uidValidity>:<uid>"; the folder path can itself contain ":",
-// so the last two parts are split off from the right.
-async function downloadAttachment({ credentials, messageExternalId, attachmentExternalId, maxBytes }) {
+// Opens the folder holding one stored message and runs fn(client, uid).
+// messageExternalId is "<folder path>:<uidValidity>:<uid>"; the folder path can
+// itself contain ":", so the last two parts are split off from the right.
+async function withStoredMessage(credentials, messageExternalId, fn) {
   const parts = messageExternalId.split(':');
   const uid = parts.pop();
   const uidValidity = parts.pop();
@@ -248,14 +250,85 @@ async function downloadAttachment({ credentials, messageExternalId, attachmentEx
       if (String(client.mailbox.uidValidity) !== uidValidity) {
         throw new Error(`Folder ${path} was renumbered on the server since this message was synced`);
       }
-      const { content } = await client.download(uid, attachmentExternalId, { uid: true, maxBytes });
-      const chunks = [];
-      for await (const chunk of content) chunks.push(chunk);
-      return Buffer.concat(chunks);
+      return await fn(client, uid);
     } finally {
       lock.release();
     }
   });
+}
+
+// Downloads one attachment's bytes (decoded).
+async function downloadAttachment({ credentials, messageExternalId, attachmentExternalId, maxBytes }) {
+  return withStoredMessage(credentials, messageExternalId, async (client, uid) => {
+    const { content } = await client.download(uid, attachmentExternalId, { uid: true, maxBytes });
+    const chunks = [];
+    for await (const chunk of content) chunks.push(chunk);
+    return Buffer.concat(chunks);
+  });
+}
+
+// ---------- sending ----------
+
+// The original's headers a reply needs: { messageId, references: [...], replyTo }.
+async function getReplyHeaders({ credentials, messageExternalId }) {
+  const headers = await withStoredMessage(credentials, messageExternalId, async (client, uid) => {
+    const message = await client.fetchOne(uid, { headers: ['message-id', 'references', 'reply-to'] }, { uid: true });
+    return message?.headers;
+  });
+  if (!headers) return { messageId: null, references: [], replyTo: null };
+
+  const parsed = await simpleParser(Buffer.concat([headers, Buffer.from('\r\n')]));
+  return {
+    messageId: parsed.messageId || null,
+    references: [].concat(parsed.references || []),
+    replyTo: parsed.replyTo?.text || null,
+  };
+}
+
+// Turns SMTP failures into messages the app can show.
+function explainSendError(err, { host, port }) {
+  if (err.code === 'EAUTH') return new UserError(`${host} rejected the password when sending. Connect the account again if it changed.`);
+  if (err.code === 'EENVELOPE') return new UserError(`The mail server refused a recipient: ${err.response || err.message}`);
+  if (['ECONNECTION', 'ETIMEDOUT', 'ESOCKET', 'EDNS'].includes(err.code)) {
+    return new UserError(`Couldn't reach the mail server ${host} on port ${port} to send`);
+  }
+  return err;
+}
+
+// Sends over SMTP (same server and login as IMAP, port 465 unless the account
+// says otherwise), then saves a copy to the Sent folder, which SMTP doesn't do
+// by itself. The email has gone by then, so a failed copy is only logged.
+async function send({ credentials, mail }) {
+  const host = credentials.smtpHost || credentials.host;
+  const port = credentials.smtpPort || 465;
+  await assertPublicHost(host);
+
+  const transport = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465, // 465 is TLS from the start; 587 upgrades with STARTTLS
+    auth: { user: credentials.user, pass: credentials.password },
+    connectionTimeout: CONNECT_TIMEOUT_MS,
+    greetingTimeout: CONNECT_TIMEOUT_MS,
+    socketTimeout: SOCKET_TIMEOUT_MS,
+  });
+  try {
+    await transport.sendMail(mail);
+  } catch (err) {
+    throw explainSendError(err, { host, port });
+  } finally {
+    transport.close();
+  }
+
+  try {
+    const raw = await buildRawEmail(mail, { keepBcc: true });
+    await withClient(credentials, async client => {
+      const sent = (await client.list()).find(f => f.specialUse === '\\Sent');
+      if (sent) await client.append(sent.path, raw, ['\\Seen']);
+    });
+  } catch (err) {
+    console.error(`Sent from ${credentials.user}, but saving a copy to the Sent folder failed:`, err.message);
+  }
 }
 
 // IMAP servers don't rate-limit the way Gmail's API does
@@ -269,5 +342,7 @@ module.exports = {
   fetchNew,
   fetchPage,
   downloadAttachment,
+  getReplyHeaders,
+  send,
   isRateLimitError,
 };

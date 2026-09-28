@@ -19,8 +19,11 @@ const MODES = {
 };
 
 // One box, two modes: ask the AI assistant, or a plain search (free, instant)
-// that lists matching emails in the sidebar.
-function AskBar({ onAsk, onSearch, asking, autoFocus = false }) {
+// that lists matching emails in the sidebar. aiPlaceholder replaces the AI mode's
+// hint (while writing an email, the box asks that email's assistant).
+// topAction: { label, onClick, className? }, a button beside the mode switch (New email,
+// or Discard while writing one).
+function AskBar({ onAsk, onSearch, asking, autoFocus = false, aiPlaceholder, topAction }) {
   const [mode, setMode] = useState('ai');
   const [input, setInput] = useState('');
   const current = MODES[mode];
@@ -52,25 +55,32 @@ function AskBar({ onAsk, onSearch, asking, autoFocus = false }) {
 
   return (
     <div className="ask-bar">
-      <div className="mode-toggle" role="group" aria-label="Search mode">
-        {Object.entries(MODES).map(([key, m]) => (
-          <button
-            key={key}
-            type="button"
-            className={mode === key ? 'active' : ''}
-            aria-pressed={mode === key}
-            onClick={() => setMode(key)}
-          >
-            {m.label}
+      <div className="ask-bar-top">
+        <div className="mode-toggle" role="group" aria-label="Search mode">
+          {Object.entries(MODES).map(([key, m]) => (
+            <button
+              key={key}
+              type="button"
+              className={mode === key ? 'active' : ''}
+              aria-pressed={mode === key}
+              onClick={() => setMode(key)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        {topAction && (
+          <button type="button" className={`btn btn-small ${topAction.className || ''}`} onClick={topAction.onClick}>
+            {topAction.label}
           </button>
-        ))}
+        )}
       </div>
       <form className="ask-bar-row" onSubmit={handleSubmit}>
         <input
           type="text"
           value={input}
           onChange={e => setInput(e.target.value)}
-          placeholder={current.placeholder}
+          placeholder={(mode === 'ai' && aiPlaceholder) || current.placeholder}
           aria-label={current.ariaLabel}
           autoFocus={autoFocus}
         />

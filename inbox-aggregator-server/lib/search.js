@@ -70,6 +70,8 @@ const KIND_WEIGHT = { yours: 1.15, transactional: 1.25, reply: 1.15, marketing: 
 const MAX_MARKETING_PER_SENDER = 2;
 // Standard rank fusion constant; smaller values let one list's top results dominate.
 const FUSION_K = 60;
+// Postgres's code for "canceling statement due to statement timeout"
+const STATEMENT_TIMEOUT = '57014';
 
 // Words that say how a question is asked rather than what it's about. They
 // appear in thousands of emails ("Ask anything", "Find out more") and would
@@ -103,6 +105,13 @@ async function hybridSearch(userId, accountIds, query, { filters, limit = 8, own
     semanticSearch(userId, accountIds, query, { filters, limit: limit * 2 }),
     keywordQuery
       ? keywordSearch(userId, accountIds, keywordQuery, { filters, limit: limit * 2, matchAny: true })
+        // A long question of common words can match most of the mailbox and
+        // run past the database's time limit; the meaning results still count.
+        .catch(err => {
+          if (err.code !== STATEMENT_TIMEOUT) throw err;
+          console.error(`Keyword half of a search timed out; using meaning results only: "${keywordQuery}"`);
+          return [];
+        })
       : [],
   ]);
 
