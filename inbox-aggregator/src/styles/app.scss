@@ -464,6 +464,12 @@ button {
   padding: $space-2 $space-3;
 }
 
+.login-secondary {
+  width: 100%;
+  margin-top: $space-2;
+  padding: $space-2 $space-3;
+}
+
 // ---------- connect dialog ----------
 .connect-dialog {
   width: min(420px, calc(100vw - #{$space-8}));
@@ -1069,13 +1075,12 @@ button {
   text-align: left;
 }
 
+// the grip on the left, then the note (which opens it)
 .note-list-item {
-  padding: $space-3 $space-4;
+  display: flex;
+  align-items: stretch;
   border-bottom: 1px solid $border;
   background: $surface;
-  cursor: pointer;
-  touch-action: manipulation;
-  user-select: none;
 
   &:hover {
     background: $accent-soft;
@@ -1100,7 +1105,59 @@ button {
     position: relative;
     z-index: 2;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  }
+}
+
+.note-list-main {
+  flex: 1;
+  min-width: 0;
+  padding: $space-3 $space-4 $space-3 0;
+  border: none;
+  background: none;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+// rows without a grip (the Done group) keep their left padding
+.note-list-item > .note-list-main:first-child {
+  padding-left: $space-4;
+}
+
+// the only place a note can be dragged from
+.drag-handle {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: grab;
+  touch-action: none; // the browser mustn't scroll when a drag starts here
+
+  &:active {
     cursor: grabbing;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $accent;
+    outline-offset: -2px;
+  }
+}
+
+// two columns of three dots, drawn with CSS
+.drag-dots {
+  width: 8px;
+  height: 14px;
+  background-image: radial-gradient(circle, $text-secondary 1.2px, transparent 1.4px);
+  background-size: 4px 5px;
+  background-position: 0 0;
+  opacity: 0.6;
+
+  .drag-handle:hover & {
+    opacity: 1;
   }
 }
 
@@ -1764,8 +1821,14 @@ $sticky-edge: #EADC8A;
     font-size: 14px;
   }
 
-  .note-list-item {
-    padding: 14px $space-4;
+  .note-list-main {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+
+  // wide enough to grab with a thumb
+  .drag-handle {
+    width: 40px;
   }
 
   .note-title {

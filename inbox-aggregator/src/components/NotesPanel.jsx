@@ -4,7 +4,6 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
-  TouchSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
@@ -38,11 +37,11 @@ function NotesPanel({ notes, now, selectedNoteId, onSelect, onCreate, onAiCreate
     }
   }
 
-  // A small movement (or, on touch, a press-and-hold) starts a drag, so taps
-  // still open the note and swipes still scroll the list.
+  // Dragging only starts from a note's grip, so it can begin right away (mouse
+  // or finger); the rest of the list scrolls normally. The keyboard works too:
+  // focus a grip, Space to pick up, arrows to move, Space to drop.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
