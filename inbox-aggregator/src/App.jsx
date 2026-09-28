@@ -7,8 +7,17 @@ import {
   syncAll,
   searchMessagesBasic,
   askAssistant,
+  getNotes,
+  createNote,
+  updateNote,
+  deleteNote,
+  addNoteAddon,
+  updateNoteAddon,
+  removeNoteAddon,
 } from './api';
 import { PHONE_LAYOUT } from './layout';
+import { dueReminderCount } from './notes';
+import { useNow } from './hooks/useNow';
 import Sidebar from './components/Sidebar';
 import MainPane from './components/MainPane';
 import './styles/app.scss';
@@ -96,8 +105,18 @@ function App({ userEmail, onSignOut }) {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState(null);
 
+  // notes: the sidebar shows either the inbox or the notes
+  const [tab, setTab] = useState('inbox');
+  const [notes, setNotes] = useState([]);
+  const [selectedNoteId, setSelectedNoteId] = useState(null);
+  const selectedNote = notes.find(note => note.id === selectedNoteId) || null;
+  // re-checked every minute, so a reminder turns due while the app is open
+  const now = useNow();
+
   // initial load
   useEffect(() => {
+    getNotes().then(setNotes).catch(() => {});
+
     getMessages({ limit: PAGE_SIZE, offset: 0 })
       .then(data => {
         setMessages(data.messages);
@@ -286,15 +305,99 @@ function App({ userEmail, onSignOut }) {
     else setPhoneScreen('list');
   }
 
+  // The main pane shows one thing at a time: an email, a note, or the chat.
+
   function openMessage(id) {
+    setSelectedNoteId(null);
     setSelectedMessageId(id);
     showMainScreen();
   }
 
+  function openNote(id) {
+    setSelectedMessageId(null);
+    setSelectedNoteId(id);
+    setTab('notes');
+    showMainScreen();
+  }
+
   function openChat() {
+    setSelectedNoteId(null);
     setSelectedMessageId(null);
     showMainScreen();
   }
+
+  // ---------- notes ----------
+  // Every change goes to the server, then the list is reloaded from it, so the
+  // app always shows what's saved (notes are few, so reloading is cheap).
+
+  async function refreshNotes() {
+    setNotes(await getNotes());
+  }
+
+  // addons: picked in the composer before saving, attached as the note is created
+  async function handleCreateNote(body, addons) {
+    await createNote(body, addons);
+    await refreshNotes();
+  }
+
+  // A sticky note written on an email: its addons already include the link to
+  // that email. The email's view is reloaded so the new card appears on it.
+  async function handleCreateNoteForEmail(body, addons, messageId) {
+    await createNote(body, addons);
+    const [message] = await Promise.all([getMessage(messageId), refreshNotes()]);
+    setLoadedMessage(prev => (prev?.id === messageId ? { ...prev, message } : prev));
+  }
+
+  async function handleSaveNoteBody(noteId, body) {
+    await updateNote(noteId, { body });
+    setNotes(prev => prev.map(note => (note.id === noteId ? { ...note, body } : note)));
+  }
+
+  // Dragging: moves the note on screen straight away, then saves the new position.
+  async function handleMoveNote(noteId, position) {
+    setNotes(prev => prev
+      .map(note => (note.id === noteId ? { ...note, position } : note))
+      .sort((a, b) => a.position - b.position));
+    try {
+      await updateNote(noteId, { position });
+    } catch (err) {
+      console.error(err);
+      setNotice({ type: 'error', text: "Couldn't save the new order, try again" });
+      refreshNotes().catch(() => {});
+    }
+  }
+
+  async function handleDeleteNote(noteId) {
+    await deleteNote(noteId);
+    setSelectedNoteId(null);
+    showListScreen();
+    await refreshNotes();
+  }
+
+  async function handleAddNoteAddon(noteId, addon) {
+    await addNoteAddon(noteId, addon);
+    await refreshNotes();
+  }
+
+  async function handleUpdateNoteAddon(addonId, changes) {
+    await updateNoteAddon(addonId, changes);
+    await refreshNotes();
+  }
+
+  async function handleRemoveNoteAddon(addonId) {
+    await removeNoteAddon(addonId);
+    await refreshNotes();
+  }
+
+  const noteActions = {
+    onSaveBody: handleSaveNoteBody,
+    onDelete: handleDeleteNote,
+    onAddAddon: handleAddNoteAddon,
+    onUpdateAddon: handleUpdateNoteAddon,
+    onRemoveAddon: handleRemoveNoteAddon,
+    onOpenNote: openNote,
+    onCreateNoteForEmail: handleCreateNoteForEmail,
+  };
 
   async function handleAsk(question) {
     openChat(); // the answer shows in the chat
@@ -318,7 +421,7 @@ function App({ userEmail, onSignOut }) {
     <div className={`app phone-shows-${phoneScreen}`}>
       <Sidebar
         onAsk={handleAsk}
-        onFocusChat={() => setSelectedMessageId(null)}
+        onFocusChat={() => { setSelectedMessageId(null); setSelectedNoteId(null); }}
         chatCount={chatHistory.length}
         onOpenChat={openChat}
         asking={chatLoading}
@@ -341,9 +444,19 @@ function App({ userEmail, onSignOut }) {
         userEmail={userEmail}
         onSignOut={onSignOut}
         search={search}
-        onSearch={handleSearch}
+        // search results are emails, so they show on the Inbox tab
+        onSearch={query => { setTab('inbox'); handleSearch(query); }}
         onClearSearch={() => setSearch(null)}
         onLoadMoreSearch={loadMoreSearch}
+        tab={tab}
+        onTabChange={setTab}
+        dueCount={dueReminderCount(notes, now)}
+        notes={notes}
+        now={now}
+        selectedNoteId={selectedNoteId}
+        onSelectNote={openNote}
+        onCreateNote={handleCreateNote}
+        onMoveNote={handleMoveNote}
       />
       <MainPane
         selectedMessageId={selectedMessageId}
@@ -354,9 +467,14 @@ function App({ userEmail, onSignOut }) {
         chatHistory={chatHistory}
         chatLoading={chatLoading}
         chatError={chatError}
+        selectedNote={selectedNote}
+        notes={notes}
+        now={now}
+        noteActions={noteActions}
         onOpenMessage={openMessage}
         onCloseMessage={() => setSelectedMessageId(null)}
         onBackToList={showListScreen}
+        backLabel={tab === 'notes' ? 'Notes' : 'Inbox'}
       />
     </div>
   );

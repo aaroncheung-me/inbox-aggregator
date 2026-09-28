@@ -1,10 +1,20 @@
-function EmailDetail({ message, account, loading, error }) {
+import EmailStickyNotes from './EmailStickyNotes';
+
+function EmailDetail({ message, account, loading, error, now, allNotes, onOpenNote, onCreateNote }) {
   if (loading) return <div className="email-detail">Loading...</div>;
   if (error) return <div className="email-detail">Error: {error}</div>;
   if (!message) return null;
 
   return (
     <div className="email-detail">
+      <EmailStickyNotes
+        messageId={message.id}
+        notes={message.notes || []}
+        allNotes={allNotes}
+        now={now}
+        onOpenNote={onOpenNote}
+        onCreate={onCreateNote}
+      />
       {account && (
         <div className="received-by">
           <span className="account-dot" style={{ background: account.color }} aria-hidden="true" />

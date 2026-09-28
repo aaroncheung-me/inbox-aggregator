@@ -10,6 +10,16 @@ const { listAccounts, listAllAccounts, getAccount, saveConnectedAccount, updateA
 const { embedPending } = require('./lib/embeddings');
 const { keywordSearch, parseSearchQuery } = require('./lib/search');
 const { askAssistant } = require('./lib/assistant');
+const {
+  listNotes,
+  notesForMessage,
+  createNote,
+  updateNote,
+  deleteNote,
+  addAddon,
+  updateAddon,
+  removeAddon,
+} = require('./lib/notes');
 const { syncAccount, backfillAccount } = require('./lib/sync');
 const { UserError } = require('./lib/errors');
 const { requireUser, createConnectState, readConnectState } = require('./lib/auth');
@@ -289,7 +299,74 @@ app.get('/messages/:messageId', async (req, res) => {
   const accountIds = await userAccountIds(req.userId);
   if (!data || !accountIds.includes(data.account_id)) return res.status(404).send('Message not found');
 
-  res.json(data);
+  // the notes stuck to this email
+  res.json({ ...data, notes: await notesForMessage(req.userId, data.id) });
+});
+
+// ---------- notes ----------
+// A note is text; reminders, links to emails or other notes, and pins are
+// add-ons attached to it. See lib/notes.js for the shapes returned.
+
+// Runs a route, answering 400 with { error } for problems the user can fix.
+function withUserErrors(handler) {
+  return async (req, res) => {
+    try {
+      await handler(req, res);
+    } catch (err) {
+      if (err instanceof UserError) return res.status(400).json({ error: err.message });
+      throw err;
+    }
+  };
+}
+
+app.get('/notes', async (req, res) => {
+  res.json(await listNotes(req.userId));
+});
+
+// Body: { body, addons?: [{ kind, remindAt?, messageId?, noteId? }] }. Returns { id }.
+// All or nothing: if any add-on is rejected, the new note is removed again, so
+// the user can fix it and save once more without leaving a half-made note behind.
+app.post('/notes', withUserErrors(async (req, res) => {
+  const id = await createNote(req.userId, req.body?.body);
+  try {
+    for (const addon of Array.isArray(req.body?.addons) ? req.body.addons : []) {
+      await addAddon(req.userId, id, addon);
+    }
+  } catch (err) {
+    await deleteNote(req.userId, id).catch(() => {});
+    throw err;
+  }
+  res.status(201).json({ id });
+}));
+
+// Body: { body?, position? }
+app.patch('/notes/:noteId', withUserErrors(async (req, res) => {
+  const updated = await updateNote(req.userId, req.params.noteId, req.body || {});
+  if (!updated) return res.status(404).send('Note not found');
+  res.status(204).end();
+}));
+
+app.delete('/notes/:noteId', async (req, res) => {
+  if (!await deleteNote(req.userId, req.params.noteId)) return res.status(404).send('Note not found');
+  res.status(204).end();
+});
+
+// Body: { kind: 'reminder' | 'email_link' | 'note_link' | 'pin', remindAt?, messageId?, noteId? }
+app.post('/notes/:noteId/addons', withUserErrors(async (req, res) => {
+  const id = await addAddon(req.userId, req.params.noteId, req.body || {});
+  if (id == null) return res.status(404).send('Note not found');
+  res.status(201).json({ id });
+}));
+
+// Body: { remindAt?, done? } (reminders only)
+app.patch('/note-addons/:addonId', withUserErrors(async (req, res) => {
+  if (!await updateAddon(req.userId, req.params.addonId, req.body || {})) return res.status(404).send('Add-on not found');
+  res.status(204).end();
+}));
+
+app.delete('/note-addons/:addonId', async (req, res) => {
+  if (!await removeAddon(req.userId, req.params.addonId)) return res.status(404).send('Add-on not found');
+  res.status(204).end();
 });
 
 // ---------- AI assistant ----------

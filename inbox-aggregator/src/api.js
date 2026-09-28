@@ -70,6 +70,56 @@ export async function connectImap({ email, password, host, port }) {
   return res.json();
 }
 
+// ---------- notes ----------
+
+// Throws with the server's explanation when it gave one (a 400 with { error }).
+async function failWith(res, fallback) {
+  const body = await res.json().catch(() => null);
+  throw new Error(body?.error || fallback);
+}
+
+export async function getNotes() {
+  const res = await apiFetch('/notes');
+  if (!res.ok) throw new Error('Failed to load notes');
+  return res.json();
+}
+
+// addons: [{ kind, remindAt?, messageId?, noteId? }], attached as it's created. Returns { id }.
+export async function createNote(body, addons = []) {
+  const res = await apiFetch('/notes', { method: 'POST', ...jsonBody({ body, addons }) });
+  if (!res.ok) await failWith(res, 'Failed to save the note');
+  return res.json();
+}
+
+// changes: { body?, position? }
+export async function updateNote(noteId, changes) {
+  const res = await apiFetch(`/notes/${noteId}`, { method: 'PATCH', ...jsonBody(changes) });
+  if (!res.ok) await failWith(res, 'Failed to update the note');
+}
+
+export async function deleteNote(noteId) {
+  const res = await apiFetch(`/notes/${noteId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete the note');
+}
+
+// addon: { kind: 'reminder' | 'email_link' | 'note_link' | 'pin', remindAt?, messageId?, noteId? }
+export async function addNoteAddon(noteId, addon) {
+  const res = await apiFetch(`/notes/${noteId}/addons`, { method: 'POST', ...jsonBody(addon) });
+  if (!res.ok) await failWith(res, 'Failed to add that to the note');
+  return res.json();
+}
+
+// changes: { remindAt?, done? } (reminders only)
+export async function updateNoteAddon(addonId, changes) {
+  const res = await apiFetch(`/note-addons/${addonId}`, { method: 'PATCH', ...jsonBody(changes) });
+  if (!res.ok) await failWith(res, 'Failed to update the reminder');
+}
+
+export async function removeNoteAddon(addonId) {
+  const res = await apiFetch(`/note-addons/${addonId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to remove that from the note');
+}
+
 // Basic search, no AI: words plus from:/after:/before:/has:attachment operators.
 export async function searchMessagesBasic(query, { limit = 25, offset = 0 } = {}) {
   const params = new URLSearchParams({ q: query, limit, offset });

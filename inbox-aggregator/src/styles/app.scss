@@ -870,6 +870,515 @@ button {
     font-size: 14px;
   }
 }
+
+// ---------- Inbox | Notes switch ----------
+.sidebar-tabs {
+  flex-shrink: 0;
+  display: flex;
+  border-bottom: 1px solid $border;
+
+  button {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: $space-2;
+    padding: $space-2 0;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    font-size: 13px;
+    font-weight: 500;
+    color: $text-secondary;
+
+    &.active {
+      color: $text-primary;
+      border-bottom-color: $accent;
+    }
+  }
+}
+
+// reminders due: the only nudge reminders give, so it's red
+.due-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: $danger;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+// ---------- notes list ----------
+.note-capture {
+  padding: $space-3 $space-4;
+  border-bottom: 1px solid $border;
+
+  textarea {
+    width: 100%;
+    resize: vertical;
+    font-family: inherit;
+    font-size: 14px;
+    padding: $space-2 $space-3;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $bg;
+    color: $text-primary;
+
+    &:focus {
+      outline: none;
+      border-color: $accent;
+    }
+  }
+}
+
+.notes-empty {
+  margin: 0;
+  padding: $space-4;
+  font-size: 13px;
+  color: $text-secondary;
+}
+
+.notes-group-title,
+.notes-group-toggle {
+  margin: 0;
+  padding: $space-2 $space-4 $space-1;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: $text-secondary;
+}
+
+.notes-group-toggle {
+  width: 100%;
+  border: none;
+  background: none;
+  text-align: left;
+}
+
+.note-list-item {
+  padding: $space-3 $space-4;
+  border-bottom: 1px solid $border;
+  background: $surface;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+
+  &:hover {
+    background: $accent-soft;
+  }
+
+  &.selected {
+    background: $accent-soft;
+    box-shadow: inset 3px 0 0 $accent;
+  }
+
+  &.due {
+    box-shadow: inset 3px 0 0 $danger;
+  }
+
+  &.done .note-title {
+    color: $text-secondary;
+    text-decoration: line-through;
+  }
+
+  // lifted while being dragged
+  &.dragging {
+    position: relative;
+    z-index: 2;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    cursor: grabbing;
+  }
+}
+
+.note-title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-preview {
+  margin-top: 2px;
+  font-size: 12px;
+  color: $text-secondary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-list-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-1;
+  margin-top: $space-1;
+}
+
+.mini-chip {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: $accent-soft;
+  font-size: 11px;
+  color: $text-secondary;
+  white-space: nowrap;
+
+  &.due {
+    background: rgba($danger, 0.1);
+    color: $danger;
+    font-weight: 600;
+  }
+
+  &.done {
+    text-decoration: line-through;
+  }
+}
+
+// ---------- note view ----------
+.note-detail {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.note-body {
+  width: 100%;
+  min-height: 160px;
+  resize: vertical;
+  padding: $space-3;
+  border: 1px solid $border;
+  border-radius: 8px;
+  background: $surface;
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1.6;
+  color: $text-primary;
+
+  &:focus {
+    outline: none;
+    border-color: $accent;
+  }
+}
+
+.save-state {
+  margin: $space-1 0 $space-3;
+  font-size: 11px;
+  color: $text-secondary;
+  text-align: right;
+
+  &.error {
+    color: $danger;
+  }
+}
+
+.note-addons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-2;
+  margin-bottom: $space-3;
+}
+
+.addon-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  max-width: 100%;
+  padding: 2px $space-1 2px $space-2;
+  border: 1px solid $border;
+  border-radius: 999px;
+  background: $surface;
+  font-size: 13px;
+
+  &.reminder.due {
+    border-color: rgba($danger, 0.5);
+    background: rgba($danger, 0.06);
+    color: $danger;
+  }
+
+  &.reminder.done .addon-chip-main {
+    text-decoration: line-through;
+    color: $text-secondary;
+  }
+}
+
+.addon-chip-main {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  font-size: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+button.addon-chip-main:hover {
+  text-decoration: underline;
+}
+
+.reminder-done {
+  display: inline-flex;
+  cursor: pointer;
+
+  input {
+    margin: 0;
+    accent-color: $accent;
+    cursor: pointer;
+  }
+}
+
+.addon-remove {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  font-size: 15px;
+  line-height: 1;
+  color: $text-secondary;
+
+  &:hover {
+    background: $accent-soft;
+    color: $text-primary;
+  }
+}
+
+// marks add-ons the AI attached
+.ai-tag {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: $accent;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.note-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: $space-2;
+}
+
+.add-addon-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-1;
+  margin-top: $space-2;
+
+  button {
+    padding: $space-1 $space-3;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $surface;
+    font-size: 13px;
+
+    &:hover {
+      background: $accent-soft;
+    }
+  }
+}
+
+.confirm-delete {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: $space-2;
+  font-size: 13px;
+}
+
+.btn-danger {
+  background: $danger;
+
+  &:hover:not(:disabled) {
+    background: #93341A; // $danger, darker
+  }
+}
+
+// ---------- note composer (a new note plus its add-ons) ----------
+.composer-addons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-2;
+  margin-top: $space-2;
+}
+
+// an add-on that comes with the note and can't be removed here ("This email")
+.addon-chip.fixed {
+  border-color: transparent;
+  background: $accent-soft;
+  color: $text-secondary;
+  padding-right: $space-2;
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: $space-2;
+  margin-top: $space-2;
+}
+
+.composer-save {
+  display: flex;
+  gap: $space-2;
+  margin-left: auto;
+}
+
+.note-composer .addon-picker {
+  margin: $space-2 0 0;
+}
+
+// ---------- add-on pickers ----------
+.addon-picker {
+  margin-bottom: $space-3;
+  padding: $space-3;
+  border: 1px solid $border;
+  border-radius: 8px;
+  background: $surface;
+}
+
+.addon-picker-title {
+  margin-bottom: $space-2;
+  font-size: 12px;
+  font-weight: 600;
+  color: $text-secondary;
+}
+
+.quick-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-2;
+  margin-bottom: $space-2;
+}
+
+.picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-2;
+
+  input {
+    flex: 1;
+    min-width: 0;
+    font-family: inherit;
+    font-size: 14px;
+    padding: $space-1 $space-2;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $bg;
+    color: $text-primary;
+  }
+}
+
+.picker-results {
+  list-style: none;
+  margin: $space-2 0 0;
+  padding: 0;
+  max-height: 280px;
+  overflow-y: auto;
+
+  button {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: $space-2;
+    border: none;
+    border-radius: 4px;
+    background: none;
+    text-align: left;
+
+    &:hover {
+      background: $accent-soft;
+    }
+  }
+}
+
+.picker-result-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.picker-result-meta {
+  font-size: 11px;
+  color: $text-secondary;
+}
+
+.picker-empty {
+  margin: $space-2 0 0;
+  font-size: 13px;
+  color: $text-secondary;
+}
+
+// ---------- sticky notes on an email ----------
+$sticky: #FFF4B8;
+$sticky-edge: #EADC8A;
+
+.sticky-notes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: $space-2;
+  margin-bottom: $space-4;
+}
+
+.sticky-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: $space-1;
+  max-width: 260px;
+  padding: $space-2 $space-3;
+  border: 1px solid $sticky-edge;
+  border-radius: 4px;
+  background: $sticky;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  text-align: left;
+  color: $text-primary;
+
+  &:hover {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  }
+}
+
+.sticky-note-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.sticky-note-form {
+  flex-basis: 100%;
+  padding: $space-2;
+  border: 1px solid $sticky-edge;
+  border-radius: 4px;
+  background: $sticky;
+
+  textarea {
+    width: 100%;
+    resize: vertical;
+    padding: $space-2;
+    border: 1px solid $sticky-edge;
+    border-radius: 4px;
+    background: #fffdf0;
+    font-family: inherit;
+    font-size: 14px;
+    color: $text-primary;
+
+    &:focus {
+      outline: none;
+      border-color: #C9B24A; // $sticky-edge, darker
+    }
+  }
+}
+
+
 // ---------- phone layout ----------
 // Keep the width in sync with PHONE_LAYOUT in src/layout.js.
 @media (max-width: 767px) {
@@ -971,8 +1480,38 @@ button {
 
   // iOS zooms the page when focusing a field with text under 16px
   .ask-bar-row input,
-  .field input {
+  .field input,
+  .note-capture textarea,
+  .note-body,
+  .picker-row input,
+  .sticky-note-form textarea {
     font-size: 16px;
+  }
+
+  .sidebar-tabs button {
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  .note-list-item {
+    padding: 14px $space-4;
+  }
+
+  .note-title {
+    font-size: 14px;
+  }
+
+  .addon-remove {
+    width: 28px;
+    height: 28px;
+  }
+
+  .add-addon-options button {
+    min-height: 40px;
+  }
+
+  .picker-results button {
+    min-height: 44px;
   }
 
   // bigger tap targets (Apple suggests at least 44px)
