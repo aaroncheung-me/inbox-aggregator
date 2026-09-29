@@ -172,18 +172,42 @@ export async function searchMessagesBasic(query, { limit = 25, offset = 0 } = {}
 // openMessageId: the email open in the app, so "note this email" knows which one.
 // draft: the email being written, when asking from the writing screen
 //   ({ mode, from, to, cc, subject, body, replyToMessageId }).
+// onProgress(event) is called while the answer is worked out: { type: 'step', text },
+// { type: 'text', delta } or { type: 'text_reset' } (see the server's /ask route).
 // Returns { answer, sources, steps, createdNotes, draft, usage }.
-export async function askAssistant(question, history, { openMessageId = null, draft = null } = {}) {
+export async function askAssistant(question, history, { openMessageId = null, draft = null, onProgress = () => {} } = {}) {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const res = await apiFetch('/ask', { method: 'POST', ...jsonBody({ question, history, openMessageId, timeZone, draft }) });
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.error || 'The assistant failed, check the server terminal');
+  if (!res.ok) await failWith(res, 'The assistant failed, try again');
+
+  // one JSON event per line; a chunk can end partway through a line
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    buffered += decoder.decode(value, { stream: !done });
+    const lines = buffered.split('\n');
+    buffered = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.type === 'done') return event.result;
+      if (event.type === 'error') throw new Error(event.error);
+      onProgress(event);
+    }
+    if (done) throw new Error('The answer was cut off, try again');
   }
-  return res.json();
 }
 
 // ---------- sending ----------
+
+// Pins live only in the app. Returns { pinned_at }.
+export async function pinMessage(messageId, pinned) {
+  const res = await apiFetch(`/messages/${messageId}`, { method: 'PATCH', ...jsonBody({ pinned }) });
+  if (!res.ok) throw new Error(pinned ? "Couldn't pin that email" : "Couldn't unpin that email");
+  return res.json();
+}
 
 // { replyTo }: where replies should go when the sender set a Reply-To, else null.
 export async function getReplyInfo(messageId) {

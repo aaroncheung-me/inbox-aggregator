@@ -6,8 +6,8 @@ import ActionMenu from './ActionMenu';
 // One email in the main pane. Its actions sit in the top bar: on a phone,
 // Reply plus a More menu for the rest, since the full row doesn't fit.
 // back: the bar's back button(s), from MainPane.
-// onReply(kind): kind is 'reply', 'replyAll' or 'forward'.
-function EmailDetail({ back, message, account, loading, error, now, allNotes, onOpenNote, onCreateNote, onAiCreateNote, onReply }) {
+// onReply(kind): kind is 'reply', 'replyAll' or 'forward'. onTogglePin pins or unpins it.
+function EmailDetail({ back, message, account, loading, error, now, allNotes, onOpenNote, onCreateNote, onAiCreateNote, onReply, onTogglePin }) {
   const [writingNote, setWritingNote] = useState(false);
   const ready = Boolean(message && !loading && !error);
 
@@ -34,7 +34,10 @@ function EmailDetail({ back, message, account, loading, error, now, allNotes, on
             {account.display_name || account.email_address}
           </div>
         )}
-        <div className="subject">{message.subject || '(no subject)'}</div>
+        <div className="subject">
+          {message.pinned_at && <span className="pinned-tag">Pinned</span>}
+          {message.subject || '(no subject)'}
+        </div>
         <div className="meta">
           {message.sender} · {new Date(message.received_at).toLocaleString()}
           <div className="meta-recipients">To: {message.to_recipients || '(nobody)'}</div>
@@ -61,6 +64,7 @@ function EmailDetail({ back, message, account, loading, error, now, allNotes, on
             <button className="btn btn-ghost btn-small desktop-only" onClick={() => onReply('replyAll')}>Reply all</button>
             <button className="btn btn-ghost btn-small desktop-only" onClick={() => onReply('forward')}>Forward</button>
             <button className="btn btn-ghost btn-small desktop-only" onClick={() => setWritingNote(true)}>+ Note</button>
+            <button className="btn btn-ghost btn-small desktop-only" onClick={onTogglePin}>{message.pinned_at ? 'Unpin' : 'Pin'}</button>
             <ActionMenu
               className="phone-only"
               label="More"
@@ -68,6 +72,7 @@ function EmailDetail({ back, message, account, loading, error, now, allNotes, on
                 { label: 'Reply all', onClick: () => onReply('replyAll') },
                 { label: 'Forward', onClick: () => onReply('forward') },
                 { label: '+ Note', onClick: () => setWritingNote(true) },
+                { label: message.pinned_at ? 'Unpin' : 'Pin', onClick: onTogglePin },
               ]}
             />
           </>

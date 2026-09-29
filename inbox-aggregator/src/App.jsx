@@ -18,6 +18,7 @@ import {
   updateNoteAddon,
   removeNoteAddon,
   getReplyInfo,
+  pinMessage,
   sendEmail,
   getSendStatus,
   cancelSend,
@@ -37,6 +38,16 @@ const PAGE_SIZE = 25;
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const REFRESH_ON_RETURN_MS = 30 * 1000;
+
+// The assistant's answer as it's being worked out, { question, steps, text },
+// updated with each progress event from askAssistant (see api.js).
+function applyProgress(pending, event) {
+  if (!pending) return pending;
+  if (event.type === 'step') return { ...pending, steps: [...pending.steps, event.text] };
+  if (event.type === 'text') return { ...pending, text: pending.text + event.delta };
+  if (event.type === 'text_reset') return { ...pending, text: '' };
+  return pending;
+}
 
 // The least recently synced account decides the "synced Xm ago" label, so it
 // never looks fresher than it is. Any never-synced account means "never synced".
@@ -106,6 +117,8 @@ function App({ userEmail, onSignOut }) {
   // message list + pagination
   const [messages, setMessages] = useState([]);
   const [total, setTotal] = useState(0);
+  // pinned emails, shown in their own group above Received (sent with the first page)
+  const [pinned, setPinned] = useState([]);
   const [loadingMore, setLoadingMore] = useState(false);
   // bumped whenever the list is reloaded, so slower, older responses can be ignored
   const listVersion = useRef(0);
@@ -140,6 +153,7 @@ function App({ userEmail, onSignOut }) {
   // AI chat
   const [chatHistory, setChatHistory] = useState([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatPending, setChatPending] = useState(null); // the answer in progress, see applyProgress
   const [chatError, setChatError] = useState(null);
 
   // notes: the sidebar shows either the inbox or the notes
@@ -157,6 +171,7 @@ function App({ userEmail, onSignOut }) {
   const [draftVisible, setDraftVisible] = useState(false);
   const [draftChat, setDraftChat] = useState([]);
   const [draftChatLoading, setDraftChatLoading] = useState(false);
+  const [draftChatPending, setDraftChatPending] = useState(null);
   const [draftChatError, setDraftChatError] = useState(null);
   // bumped whenever a draft opens or closes, so a late answer about an old one is dropped
   const draftSession = useRef(0);
@@ -191,6 +206,7 @@ function App({ userEmail, onSignOut }) {
     getMessages({ limit: PAGE_SIZE, offset: 0 })
       .then(data => {
         setMessages(data.messages);
+        setPinned(data.pinned || []);
         setTotal(data.total);
       })
       .catch(() => {});
@@ -241,6 +257,7 @@ function App({ userEmail, onSignOut }) {
     if (version !== listVersion.current) return false;
     setMessages(page.messages);
     setTotal(page.total);
+    setPinned(page.pinned || []);
     return true;
   }
 
@@ -249,6 +266,7 @@ function App({ userEmail, onSignOut }) {
     if (version !== listVersion.current) return;
     setMessages(prev => mergeFirstPage(prev, page));
     setTotal(page.total);
+    setPinned(page.pinned || []);
   }
 
   // Coming back to the app (its tab or window, or reopening the phone app)
@@ -459,6 +477,20 @@ function App({ userEmail, onSignOut }) {
     showMainScreen();
   }
 
+  // Pins or unpins the open email, then reloads the list so it moves in or out
+  // of the Pinned group.
+  async function handleTogglePin() {
+    const message = selectedMessage;
+    if (!message) return;
+    try {
+      const { pinned_at } = await pinMessage(message.id, !message.pinned_at);
+      setLoadedMessage(prev => (prev?.id === message.id ? { ...prev, message: { ...prev.message, pinned_at } } : prev));
+      await reloadMessages();
+    } catch (err) {
+      setNotice({ type: 'error', text: err.message });
+    }
+  }
+
   // ---------- writing and sending email ----------
 
   const ownAddresses = accounts.map(a => a.email_address.toLowerCase());
@@ -473,6 +505,7 @@ function App({ userEmail, onSignOut }) {
     setDraftChat(chat);
     setDraftChatError(null);
     setDraftChatLoading(false);
+    setDraftChatPending(null);
     showDraft();
     return true;
   }
@@ -484,6 +517,7 @@ function App({ userEmail, onSignOut }) {
     setDraftChat([]);
     setDraftChatError(null);
     setDraftChatLoading(false);
+    setDraftChatPending(null);
   }
 
   function handleNewEmail() {
@@ -605,6 +639,7 @@ function App({ userEmail, onSignOut }) {
     const session = draftSession.current;
     setDraftChatLoading(true);
     setDraftChatError(null);
+    setDraftChatPending({ question, steps: [], text: '' });
     try {
       const history = draftChat.map(({ question: q, answer }) => ({ question: q, answer }));
       const result = await askAssistant(question, history, {
@@ -617,6 +652,9 @@ function App({ userEmail, onSignOut }) {
           body: draft.body,
           replyToMessageId: draft.originalMessageId,
         },
+        onProgress: event => {
+          if (session === draftSession.current) setDraftChatPending(prev => applyProgress(prev, event));
+        },
       });
       if (session !== draftSession.current) return;
       setDraftChat(prev => [...prev, { question, ...result }]);
@@ -624,7 +662,10 @@ function App({ userEmail, onSignOut }) {
     } catch (err) {
       if (session === draftSession.current) setDraftChatError(err.message);
     } finally {
-      if (session === draftSession.current) setDraftChatLoading(false);
+      if (session === draftSession.current) {
+        setDraftChatLoading(false);
+        setDraftChatPending(null);
+      }
       refreshStatus();
     }
   }
@@ -781,16 +822,21 @@ function App({ userEmail, onSignOut }) {
     openChat(); // the answer shows in the chat
     setChatLoading(true);
     setChatError(null);
+    setChatPending({ question, steps: [], text: '' });
     try {
       // earlier exchanges go along so follow-up questions make sense
       const history = chatHistory.map(({ question: q, answer }) => ({ question: q, answer }));
-      const result = await askAssistant(question, history, { openMessageId });
+      const result = await askAssistant(question, history, {
+        openMessageId,
+        onProgress: event => setChatPending(prev => applyProgress(prev, event)),
+      });
       setChatHistory(prev => [...prev, { question, ...result }]);
       if (result.createdNotes?.length) await refreshNotes();
     } catch (err) {
       setChatError(err.message);
     } finally {
       setChatLoading(false);
+      setChatPending(null);
       refreshStatus();
     }
   }
@@ -829,6 +875,7 @@ function App({ userEmail, onSignOut }) {
         onSync={handleSync}
         syncing={syncing}
         messages={messages}
+        pinned={pinned}
         selectedId={selectedMessageId}
         onSelect={openMessage}
         hasMore={messages.length < total}
@@ -877,6 +924,7 @@ function App({ userEmail, onSignOut }) {
             <DraftAssistant
               history={draftChat}
               loading={draftChatLoading}
+              pending={draftChatPending}
               error={draftChatError}
               onUseDraft={handleUseAiDraft}
               onOpenMessage={openMessage}
@@ -894,6 +942,7 @@ function App({ userEmail, onSignOut }) {
         messageError={messageError}
         chatHistory={chatHistory}
         chatLoading={chatLoading}
+        chatPending={chatPending}
         chatError={chatError}
         selectedNote={selectedNote}
         notes={notes}
@@ -908,6 +957,7 @@ function App({ userEmail, onSignOut }) {
         // while writing, the list screen is the email's assistant
         backLabel={draft ? 'Assistant' : tab === 'notes' ? 'Notes' : 'Inbox'}
         onReply={handleReply}
+        onTogglePin={handleTogglePin}
         compose={draft && {
           draft,
           visible: draftVisible,

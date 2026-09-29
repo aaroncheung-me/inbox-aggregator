@@ -26,6 +26,7 @@ function MainPane({
   onDismissAiHeadsUp,
   chatHistory,
   chatLoading,
+  chatPending,
   chatError,
   onOpenMessage,
   onUndoCreatedNote,
@@ -33,6 +34,7 @@ function MainPane({
   onBackToList,
   backLabel,
   onReply,
+  onTogglePin,
   compose,
 }) {
   let desktopBack = null;
@@ -98,6 +100,7 @@ function MainPane({
         onCreateNote={noteActions.onCreate}
         onAiCreateNote={noteActions.onAiCreate}
         onReply={onReply}
+        onTogglePin={onTogglePin}
       />
     );
   } else {
@@ -108,6 +111,7 @@ function MainPane({
           <ChatPanel
             history={chatHistory}
             loading={chatLoading}
+          pending={chatPending}
             error={chatError}
             onOpenMessage={onOpenMessage}
             onOpenNote={noteActions.onOpenNote}

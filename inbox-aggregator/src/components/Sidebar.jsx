@@ -17,6 +17,7 @@ function Sidebar({
   onSync,
   syncing,
   messages,
+  pinned = [],
   selectedId,
   onSelect,
   hasMore,
@@ -102,19 +103,29 @@ function Sidebar({
     </>
   );
 
-  // received or sent mail, whichever the switch above the list shows
+  // received or sent mail, whichever the switch above the list shows; pinned
+  // emails sit in their own group above Received
   const folderList = (
-    <MessageList
-      messages={messages}
-      accountColors={accountColors}
-      selectedId={selectedId}
-      onSelect={onSelect}
-      hasMore={hasMore}
-      loadingMore={loadingMore}
-      onLoadMore={onLoadMore}
-      total={total}
-      showRecipients={folder === 'sent'}
-    />
+    <>
+      {folder === 'inbox' && pinned.length > 0 && (
+        <>
+          <div className="list-group-label">Pinned</div>
+          <MessageList messages={pinned} accountColors={accountColors} selectedId={selectedId} onSelect={onSelect} hasMore={false} />
+          <div className="list-group-label">Received</div>
+        </>
+      )}
+      <MessageList
+        messages={messages}
+        accountColors={accountColors}
+        selectedId={selectedId}
+        onSelect={onSelect}
+        hasMore={hasMore}
+        loadingMore={loadingMore}
+        onLoadMore={onLoadMore}
+        total={total}
+        showRecipients={folder === 'sent'}
+      />
+    </>
   );
 
   return (

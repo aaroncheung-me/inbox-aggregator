@@ -261,30 +261,49 @@ app.post('/embed/:accountId', async (req, res) => {
 // trash and mail that was only sent: archived Gmail mail stays in it, and an
 // email between two of your own accounts shows under Sent from one and here,
 // as received, in the other.
+// Pinned emails are listed apart, above Received: its first page (offset 0)
+// also returns them as `pinned`, and the list below leaves them out.
+const LIST_COLUMNS = 'id, account_id, sender, to_recipients, subject, snippet, received_at, is_read, has_attachments, pinned_at';
+const MAX_PINNED = 50;
+
 app.get('/messages', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 25, 100);
   const offset = parseInt(req.query.offset) || 0;
 
   let accountIds = await visibleAccountIds(req.userId);
   if (req.query.accountId) accountIds = accountIds.filter(id => id === Number(req.query.accountId));
-  if (!accountIds.length) return res.json({ messages: [], total: 0, limit, offset });
+  const sent = req.query.folder === 'sent';
+  if (!accountIds.length) return res.json({ messages: [], pinned: [], total: 0, limit, offset });
 
   let query = supabase
     .from('messages')
-    .select('id, account_id, sender, to_recipients, subject, snippet, received_at, is_read, has_attachments', { count: 'exact' })
+    .select(LIST_COLUMNS, { count: 'exact' })
     .in('account_id', accountIds);
-  query = req.query.folder === 'sent'
+  query = sent
     ? query.contains('labels', ['SENT'])
     : query
       .or('labels.cs.{INBOX},labels.not.cs.{SENT}')
-      .not('labels', 'ov', '{SPAM,TRASH}');
+      .not('labels', 'ov', '{SPAM,TRASH}')
+      .is('pinned_at', null);
 
-  const { data, error, count } = await query
-    .order('received_at', { ascending: false, nullsFirst: false })
-    .range(offset, offset + limit - 1);
+  const [list, pinned] = await Promise.all([
+    query
+      .order('received_at', { ascending: false, nullsFirst: false })
+      .range(offset, offset + limit - 1),
+    sent || offset > 0
+      ? { data: [] }
+      : supabase
+        .from('messages')
+        .select(LIST_COLUMNS)
+        .in('account_id', accountIds)
+        .not('pinned_at', 'is', null)
+        .order('pinned_at', { ascending: false })
+        .limit(MAX_PINNED),
+  ]);
 
-  if (error) throw error;
-  res.json({ messages: data, total: count, limit, offset });
+  if (list.error) throw list.error;
+  if (pinned.error) throw pinned.error;
+  res.json({ messages: list.data, pinned: pinned.data, total: list.count, limit, offset });
 });
 
 // Basic search, no AI: ?q= words plus Gmail-style operators
@@ -315,7 +334,7 @@ app.get('/messages/:messageId', async (req, res) => {
     .from('messages')
     .select(`
       id, account_id, thread_id, sender, to_recipients, cc_recipients, subject, body, snippet,
-      received_at, labels, is_read, attachments(id, filename, mime_type, size_bytes)
+      received_at, labels, is_read, pinned_at, attachments(id, filename, mime_type, size_bytes)
     `)
     .eq('id', req.params.messageId)
     .maybeSingle();
@@ -327,6 +346,29 @@ app.get('/messages/:messageId', async (req, res) => {
 
   // the notes stuck to this email
   res.json({ ...data, notes: await notesForMessage(req.userId, data.id) });
+});
+
+// Body: { pinned: boolean }. Pins live only in the app. Returns { pinned_at }.
+app.patch('/messages/:messageId', async (req, res) => {
+  if (typeof req.body?.pinned !== 'boolean') return res.status(400).json({ error: 'Send { pinned: true | false }' });
+
+  const { data: message, error } = await supabase
+    .from('messages')
+    .select('account_id')
+    .eq('id', req.params.messageId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!message || !(await userAccountIds(req.userId)).includes(message.account_id)) {
+    return res.status(404).send('Message not found');
+  }
+
+  const pinnedAt = req.body.pinned ? new Date().toISOString() : null;
+  const { error: updateError } = await supabase
+    .from('messages')
+    .update({ pinned_at: pinnedAt })
+    .eq('id', req.params.messageId);
+  if (updateError) throw updateError;
+  res.json({ pinned_at: pinnedAt });
 });
 
 // What replying needs that isn't stored: { replyTo } (the address replies
@@ -511,7 +553,12 @@ function readDraft(draft) {
 // Body: { question, history?: [{ question, answer }] (earlier exchanges in this chat, oldest first),
 //         openMessageId? (the email open in the app, for "note this email"), timeZone?,
 //         draft? (the email being written, see readDraft) }
-// Returns { answer, sources, steps, createdNotes, draft, usage }; see lib/assistant.js.
+// Replies with a stream of JSON lines (NDJSON) as the answer is worked out, so
+// the app can show progress and the answer as it's written:
+//   { type: 'step', text }, { type: 'text', delta }, { type: 'text_reset' } (see lib/assistant.js),
+//   then { type: 'done', result: { answer, sources, steps, createdNotes, draft, usage } }
+//   or { type: 'error', error, outOfCredits }.
+// A missing question is still a plain 400 with { error }.
 app.post('/ask', async (req, res) => {
   const question = typeof req.body?.question === 'string' ? req.body.question.trim().slice(0, 1000) : '';
   if (!question) return res.status(400).json({ error: 'Ask a question first' });
@@ -525,19 +572,33 @@ app.post('/ask', async (req, res) => {
   const accounts = await listAccounts(req.userId);
   const accountIds = accounts.filter(a => a.show_in_inbox).map(a => a.id);
   const ownAddresses = accounts.map(a => a.email_address.toLowerCase());
+
+  res.status(200);
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no'); // tells proxies not to hold the stream back
+  res.flushHeaders();
+  const send = event => res.write(`${JSON.stringify(event)}\n`);
+
   if (!accountIds.length) {
-    return res.json({
-      answer: 'All your accounts are hidden. Check one in the Accounts panel to search it.',
-      sources: [],
-      steps: [],
-      createdNotes: [],
-      draft: null,
-      usage: null,
+    send({
+      type: 'done',
+      result: {
+        answer: 'All your accounts are hidden. Check one in the Accounts panel to search it.',
+        sources: [],
+        steps: [],
+        createdNotes: [],
+        draft: null,
+        usage: null,
+      },
     });
+    return res.end();
   }
 
+  // Errors are sent as a line of the stream: the response has already started,
+  // so the usual error handler can't send its own reply.
   try {
-    const answer = await askAssistant({
+    const result = await askAssistant({
       userId: req.userId,
       accountIds,
       ownAddresses,
@@ -546,16 +607,21 @@ app.post('/ask', async (req, res) => {
       openMessageId: Number(req.body.openMessageId) || null,
       timeZone: req.body.timeZone,
       draft: readDraft(req.body.draft),
+      onEvent: send,
     });
     noteProviderSuccess('anthropic');
-    res.json(answer);
+    send({ type: 'done', result });
   } catch (err) {
     noteProviderFailure(err);
-    const problem = describeProviderError(err);
-    if (!problem) throw err;
     console.error('Assistant request failed:', err);
-    res.status(502).json({ error: problem.message, outOfCredits: problem.outOfCredits });
+    const problem = describeProviderError(err);
+    send({
+      type: 'error',
+      error: problem?.message || 'The assistant failed, check the server log',
+      outOfCredits: problem?.outOfCredits || false,
+    });
   }
+  res.end();
 });
 
 // ---------- AI provider status ----------
@@ -574,7 +640,10 @@ app.post('/transcribe', express.raw({ type: TRANSCRIBE_TYPES, limit: '10mb' }), 
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'No recording was received' });
 
   try {
+    const started = Date.now();
     const text = await transcribe(req.body, req.get('content-type'));
+    // for finding what makes voice slow
+    console.log(`Voice timing: ${Math.round(req.body.length / 1024)}KB transcribed in ${Date.now() - started}ms`);
     noteProviderSuccess('openai');
     if (!text) return res.status(422).json({ error: "Couldn't hear anything in that recording" });
     res.json({ text });

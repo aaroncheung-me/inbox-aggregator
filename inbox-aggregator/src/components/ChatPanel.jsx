@@ -52,6 +52,28 @@ function CreatedNotes({ notes, onOpenNote, onUndo }) {
   );
 }
 
+// The answer while it's being worked out: each search or lookup as it
+// finishes, then the answer text as it's written. Citation markers like [#123]
+// are hidden until the finished answer replaces this (they become buttons then).
+function PendingAnswer({ pending, workingLabel }) {
+  const text = pending.text
+    .replace(/\[(?:#|note )\d+\]/g, '')
+    .replace(/\[[^\]]*$/, ''); // a marker still being written
+  return (
+    <div className="chat-exchange pending">
+      <div className="chat-question">{pending.question}</div>
+      {pending.steps.length > 0 && (
+        <ol className="chat-live-steps">
+          {pending.steps.map((step, i) => <li key={i}>{step}</li>)}
+        </ol>
+      )}
+      {text.trim()
+        ? <div className="chat-answer">{text}</div>
+        : <div className="chat-thinking">{workingLabel}</div>}
+    </div>
+  );
+}
+
 // A draft the assistant wrote for the email being written, with a button to put it in.
 function DraftSuggestion({ draft, used, onUse }) {
   return (
@@ -70,7 +92,11 @@ function DraftSuggestion({ draft, used, onUse }) {
 // emptyContent replaces the usual examples when there's nothing yet (the
 // assistant beside the writing screen has its own). onUseDraft(exchangeIndex)
 // is given there too, for drafts the assistant wrote.
-function ChatPanel({ history, loading, error, onOpenMessage, onOpenNote, onUndoCreatedNote, emptyContent = null, onUseDraft = null }) {
+// pending: the answer in progress, { question, steps, text } (see applyProgress in App.jsx).
+function ChatPanel({
+  history, loading, pending = null, error, onOpenMessage, onOpenNote, onUndoCreatedNote,
+  emptyContent = null, onUseDraft = null, workingLabel = 'Searching your email and notes...',
+}) {
   const openSource = source => (source.kind === 'note' ? onOpenNote(source.id) : onOpenMessage(source.id));
 
   if (history.length === 0 && !loading && !error && emptyContent) {
@@ -150,7 +176,9 @@ function ChatPanel({ history, loading, error, onOpenMessage, onOpenNote, onUndoC
         </div>
       ))}
 
-      {loading && <div className="chat-thinking">Searching your email and notes...</div>}
+      {loading && (pending
+        ? <PendingAnswer pending={pending} workingLabel={workingLabel} />
+        : <div className="chat-thinking">{workingLabel}</div>)}
       {error && <div className="chat-error">Error: {error}</div>}
     </div>
   );

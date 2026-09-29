@@ -932,6 +932,15 @@ $pane-column: 680px;
   color: $text-secondary;
 }
 
+// the searches and lookups of an answer still being worked out
+.chat-live-steps {
+  margin: 0 0 $space-2;
+  padding-left: $space-6;
+  font-size: 12px;
+  line-height: 1.6;
+  color: $text-secondary;
+}
+
 .chat-steps {
   summary {
     cursor: pointer;
@@ -1015,6 +1024,29 @@ $pane-column: 680px;
     line-height: 1.6;
     font-size: 14px;
   }
+}
+
+// "Pinned" / "Received" above those parts of the inbox list
+.list-group-label {
+  padding: $space-2 $space-4 $space-1;
+  border-bottom: 1px solid $border;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: $text-secondary;
+}
+
+.pinned-tag {
+  display: inline-block;
+  margin-right: $space-2;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: $accent-soft;
+  color: $accent;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
 }
 
 .email-detail .meta-recipients {

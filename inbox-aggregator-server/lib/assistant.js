@@ -307,6 +307,22 @@ async function runTool(name, input, ctx) {
 
 // ---------- the answer loop ----------
 
+// Where an answer's time went, logged as one line per question, so slow parts
+// can be found (locally and in Render's logs).
+function stopwatch() {
+  const start = Date.now();
+  let last = start;
+  const laps = [];
+  return {
+    lap(label) {
+      const now = Date.now();
+      laps.push(`${label} ${now - last}ms`);
+      last = now;
+    },
+    summary: () => `${laps.join(', ')} = ${Date.now() - start}ms`,
+  };
+}
+
 // Keeps only citations of emails and notes Claude actually saw (so it can't
 // point at made-up ids), and returns them in order of first mention as
 // sources: { kind: 'email', id, accountId, subject, sender, received_at, preview }
@@ -415,8 +431,16 @@ function draftBlock(draft) {
 // ownAddresses: the user's connected email addresses, to spot emails they sent.
 // openMessageId: the email open in the app, if any. timeZone: the user's, for reminders.
 // draft: the email being written, when asked from the writing screen (see readDraft in index.js).
+// onEvent: called as the answer is worked out, so the app can show progress:
+//   { type: 'step', text }   a search or lookup just finished (same text as in `steps`)
+//   { type: 'text', delta }  the next piece of answer text
+//   { type: 'text_reset' }   text streamed so far was a lead-in before a lookup, not the answer
 // Returns { answer, sources, steps, createdNotes: [{ id, title }], draft: { body, subject } | null, usage }.
-async function askAssistant({ userId, accountIds, ownAddresses = [], question, history = [], openMessageId = null, timeZone, draft = null }) {
+async function askAssistant({
+  userId, accountIds, ownAddresses = [], question, history = [], openMessageId = null, timeZone, draft = null,
+  onEvent = () => {},
+}) {
+  const timer = stopwatch();
   const recentHistory = history.slice(-MAX_HISTORY_TURNS);
   const ctx = {
     userId,
@@ -425,33 +449,45 @@ async function askAssistant({ userId, accountIds, ownAddresses = [], question, h
     timeZone: validTimeZone(timeZone),
     seen: new Set(),      // email ids found or opened: only these can be cited or linked
     seenNotes: new Set(), // likewise for notes
-    notes: await listNotes(userId),
+    notes: [],
     created: [],          // notes made by create_note this turn
     drafting: Boolean(draft),
     draft: null,          // set by write_draft
   };
   const steps = [];
-  const usage = { inputTokens: 0, outputTokens: 0 };
+  const addStep = text => {
+    steps.push(text);
+    onEvent({ type: 'step', text });
+  };
+  const usage = { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0 };
+
+  // When replying or forwarding, "this email" is the one being answered.
+  // While writing, requests are mostly instructions ("make it shorter"), not
+  // searches, so there's no search up front; the tools are there if needed.
+  // These three don't depend on each other, so they run at the same time.
+  const answering = draft?.replyToMessageId || null;
+  const [notes, initial, openEmailBase] = await Promise.all([
+    listNotes(userId),
+    ctx.drafting ? [] : hybridSearch(userId, accountIds, question, { limit: INITIAL_RESULTS, ownAddresses }),
+    openEmailLine(answering || openMessageId, ctx),
+  ]);
+  ctx.notes = notes;
+  timer.lap('search');
 
   await seedFromHistory(recentHistory, ctx);
-  // when replying or forwarding, "this email" is the one being answered, and
-  // its text comes along so the assistant needn't look it up
-  const answering = draft?.replyToMessageId || null;
-  let openEmail = await openEmailLine(answering || openMessageId, ctx);
+  let openEmail = openEmailBase;
+  // the email being answered comes with its text, so it needn't be looked up
   if (answering && openEmail) {
     const { content } = await runTool('read_email', { email_id: answering }, ctx);
     openEmail = `The email being answered:\n${content}\n\n`;
   }
   if (draft) openEmail += draftBlock(draft);
 
-  // While writing, requests are mostly instructions ("make it shorter"), not
-  // searches, so there's no search up front; the tools are there if needed.
-  const initial = ctx.drafting ? [] : await hybridSearch(userId, accountIds, question, { limit: INITIAL_RESULTS, ownAddresses });
   initial.forEach(m => ctx.seen.add(m.id));
   const initialNotes = ctx.drafting ? [] : searchNotes(ctx.notes, questionKeywords(question)).slice(0, INITIAL_NOTES);
   initialNotes.forEach(note => ctx.seenNotes.add(note.id));
   if (!ctx.drafting) {
-    steps.push(`Searched for your question: ${initial.length} email${initial.length === 1 ? '' : 's'}` +
+    addStep(`Searched for your question: ${initial.length} email${initial.length === 1 ? '' : 's'}` +
       (initialNotes.length ? `, ${initialNotes.length} note${initialNotes.length === 1 ? '' : 's'}` : ''));
   }
 
@@ -470,41 +506,65 @@ async function askAssistant({ userId, accountIds, ownAddresses = [], question, h
       ? `${openEmail}Request: ${question}`
       : `${openEmail}Question: ${question}\n\nInitial search results:\n\n${emailResults}${noteResults}`,
   });
+  timer.lap('setup');
+
+  async function finish(text) {
+    const fallback = ctx.draft
+      ? 'Here is a draft. Press "Use this draft" to put it in your email.'
+      : ctx.created.length ? 'Done.' : "I couldn't come up with an answer to that.";
+    const { answer, sources } = await collectSources(text || fallback, ctx);
+    timer.lap('sources');
+    console.log(`Assistant timing: ${timer.summary()}`);
+    const [inputPrice, outputPrice] = PRICES[MODEL] || [];
+    return {
+      answer,
+      sources,
+      steps,
+      createdNotes: ctx.created,
+      draft: ctx.draft,
+      usage: {
+        model: MODEL,
+        ...usage,
+        // cache writes cost 1.25x the input price, cache reads 0.1x
+        costUsd: inputPrice == null ? null : (
+          (usage.inputTokens + usage.cacheWriteTokens * 1.25 + usage.cacheReadTokens * 0.1) * inputPrice +
+          usage.outputTokens * outputPrice
+        ) / 1e6,
+      },
+    };
+  }
 
   let toolCalls = 0;
+  let aiCalls = 0;
   for (;;) {
-    const response = await anthropic.messages.create({
+    // Streamed, so the answer shows as it's written. Automatic caching marks
+    // the end of the conversation so far; each later round of this question
+    // (and a follow-up within 5 minutes) re-reads that part from cache, which
+    // is faster and cheaper. Below Haiku's 4096-token minimum it just doesn't cache.
+    const stream = anthropic.messages.stream({
       model: MODEL,
       max_tokens: 2048,
+      cache_control: { type: 'ephemeral' },
       system: systemPrompt(ctx.timeZone, ctx.drafting),
       tools: ctx.drafting ? [...TOOLS, WRITE_DRAFT_TOOL] : TOOLS,
       // once the limit is hit, the next reply has to be the answer
       ...(toolCalls >= MAX_TOOL_CALLS && { tool_choice: { type: 'none' } }),
       messages,
     });
+    stream.on('text', delta => onEvent({ type: 'text', delta }));
+    const response = await stream.finalMessage();
+    timer.lap(`AI #${++aiCalls}`);
     usage.inputTokens += response.usage.input_tokens;
     usage.outputTokens += response.usage.output_tokens;
+    usage.cacheWriteTokens += response.usage.cache_creation_input_tokens || 0;
+    usage.cacheReadTokens += response.usage.cache_read_input_tokens || 0;
 
+    const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
     const toolUses = response.content.filter(block => block.type === 'tool_use');
-    if (response.stop_reason !== 'tool_use' || !toolUses.length) {
-      const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-      const fallback = ctx.created.length || ctx.draft ? 'Done.' : "I couldn't come up with an answer to that.";
-      const { answer, sources } = await collectSources(text || fallback, ctx);
-      const [inputPrice, outputPrice] = PRICES[MODEL] || [];
-      return {
-        answer,
-        sources,
-        steps,
-        createdNotes: ctx.created,
-        draft: ctx.draft,
-        usage: {
-          model: MODEL,
-          ...usage,
-          costUsd: inputPrice == null ? null : (usage.inputTokens * inputPrice + usage.outputTokens * outputPrice) / 1e6,
-        },
-      };
-    }
+    if (response.stop_reason !== 'tool_use' || !toolUses.length) return finish(text);
 
+    // any text so far was a lead-in ("Let me look..."), not the answer
+    if (text) onEvent({ type: 'text_reset' });
     messages.push({ role: 'assistant', content: response.content });
 
     // every tool_use needs a tool_result, all in one message
@@ -517,13 +577,19 @@ async function askAssistant({ userId, accountIds, ownAddresses = [], question, h
       toolCalls++;
       try {
         const { content, step, isError } = await runTool(toolUse.name, toolUse.input, ctx);
-        if (step) steps.push(step);
+        timer.lap(toolUse.name);
+        if (step) addStep(step);
         results.push({ type: 'tool_result', tool_use_id: toolUse.id, content, ...(isError && { is_error: true }) });
       } catch (err) {
         console.error(`Assistant tool ${toolUse.name} failed:`, err);
         results.push({ type: 'tool_result', tool_use_id: toolUse.id, content: 'That lookup failed.', is_error: true });
       }
     }
+
+    // Once a draft is written the job is done: another AI call would only
+    // say "I drafted it", and the draft card already says that.
+    if (ctx.draft) return finish(text);
+
     if (toolCalls >= MAX_TOOL_CALLS) {
       results.push({ type: 'text', text: 'That was the last tool call. Answer now with what you found.' });
     }
