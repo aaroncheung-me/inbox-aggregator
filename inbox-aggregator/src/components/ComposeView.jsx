@@ -1,6 +1,7 @@
 import { useId } from 'react';
 import { DRAFT_TITLES } from '../compose';
 import PaneBar from './PaneBar';
+import Linkify from './Linkify';
 
 // The writing screen, in the main pane. Plain text only for now.
 // draft: see newDraft in compose.js. onChange(changes) merges into it.
@@ -89,11 +90,11 @@ function ComposeView({ draft, accounts, sending, onChange, onSend, onDiscard, on
           />
 
           {draft.quoted && (draft.mode === 'forward' ? (
-            <div className="compose-quoted">{draft.quoted}</div>
+            <div className="compose-quoted"><Linkify text={draft.quoted} /></div>
           ) : (
             <details className="compose-quoted-toggle">
               <summary>Quoted text</summary>
-              <div className="compose-quoted">{draft.quoted}</div>
+              <div className="compose-quoted"><Linkify text={draft.quoted} /></div>
             </details>
           ))}
           {draft.attachmentsLeftOut > 0 && (

@@ -3,7 +3,8 @@ import { ACCOUNT_COLORS } from '../accountColors';
 import { useDismiss } from '../hooks/useDismiss';
 
 // The account's color dot; clicking it opens a popover of swatches plus a custom color.
-function AccountColorPicker({ account, onChangeColor }) {
+// dashed: drawn as a dashed ring, as temp addresses are.
+function AccountColorPicker({ account, onChangeColor, dashed = false }) {
   const [open, setOpen] = useState(false);
   const pickerRef = useRef(null);
   useDismiss(pickerRef, open, setOpen);
@@ -14,8 +15,8 @@ function AccountColorPicker({ account, onChangeColor }) {
   return (
     <div className="color-picker" ref={pickerRef}>
       <button
-        className="account-dot account-dot-button"
-        style={{ background: account.color }}
+        className={dashed ? 'temp-dot account-dot-button' : 'account-dot account-dot-button'}
+        style={dashed ? { borderColor: account.color || undefined } : { background: account.color }}
         onClick={() => setOpen(prev => !prev)}
         aria-label={`Change color for ${name}`}
         aria-expanded={open}

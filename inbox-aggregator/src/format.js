@@ -40,3 +40,13 @@ export function accountsSummary(accounts) {
   const shownCount = accounts.filter(a => a.show_in_inbox).length;
   return shownCount === accounts.length ? `${accounts.length}` : `${shownCount} of ${accounts.length} shown`;
 }
+
+// "45m", "5h", "3d" until the given time; "now" once it's passed.
+export function timeLeft(isoString, now = Date.now()) {
+  const minutes = Math.floor((new Date(isoString).getTime() - now) / 60000);
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}

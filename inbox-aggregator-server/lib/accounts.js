@@ -131,4 +131,5 @@ module.exports = {
   saveSyncState,
   saveConnectedAccount,
   updateAccountSettings,
+  ACCOUNT_COLORS,
 };

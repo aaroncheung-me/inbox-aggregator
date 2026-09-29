@@ -236,3 +236,32 @@ export async function cancelSend(outboxId) {
   const res = await apiFetch(`/send/${outboxId}`, { method: 'DELETE' });
   if (!res.ok) await failWith(res, 'Could not undo, check your Sent folder');
 }
+
+// ---------- temp addresses ----------
+
+// { available, reason, domain, addresses: [{ id, address, label, created_at, expires_at, received }] }
+export async function getTempAddresses() {
+  const res = await apiFetch('/temp-addresses');
+  if (!res.ok) throw new Error('Failed to load temp addresses');
+  return res.json();
+}
+
+// lifetime: '1h' | '1d' | '1w' | '1m'. Returns the new address.
+export async function createTempAddress(lifetime, label) {
+  const res = await apiFetch('/temp-addresses', { method: 'POST', ...jsonBody({ lifetime, label }) });
+  if (!res.ok) await failWith(res, "Couldn't make a temp address, try again");
+  return res.json();
+}
+
+// changes: { lifetime? (keeps it that long from now), color?, show_in_inbox? }
+export async function updateTempAddress(id, changes) {
+  const res = await apiFetch(`/temp-addresses/${id}`, { method: 'PATCH', ...jsonBody(changes) });
+  if (!res.ok) await failWith(res, "Couldn't change that address");
+  return res.json();
+}
+
+// Deletes it now, with the emails it received.
+export async function deleteTempAddress(id) {
+  const res = await apiFetch(`/temp-addresses/${id}`, { method: 'DELETE' });
+  if (!res.ok) await failWith(res, "Couldn't delete that address");
+}

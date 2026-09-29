@@ -1,3 +1,5 @@
+import Linkify from './Linkify';
+
 // Always dollars, so a fraction of a cent can't be misread: $0.0052, $0.031
 function formatCost(usd) {
   if (usd == null) return null;
@@ -18,7 +20,7 @@ function AnswerText({ text, sources, onOpenSource }) {
   const numberByKey = new Map(sources.map((source, i) => [sourceKey(source), i + 1]));
   return text.split(/(\[(?:#|note )\d+\])/g).map((part, i) => {
     const match = /^\[(#|note )(\d+)\]$/.exec(part);
-    if (!match) return <span key={i}>{part}</span>;
+    if (!match) return <span key={i}><Linkify text={part} /></span>;
 
     const key = `${match[1] === '#' ? 'email' : 'note'}:${match[2]}`;
     const number = numberByKey.get(key);
@@ -68,7 +70,7 @@ function PendingAnswer({ pending, workingLabel }) {
         </ol>
       )}
       {text.trim()
-        ? <div className="chat-answer">{text}</div>
+        ? <div className="chat-answer"><Linkify text={text} /></div>
         : <div className="chat-thinking">{workingLabel}</div>}
     </div>
   );
@@ -81,7 +83,7 @@ function DraftSuggestion({ draft, used, onUse }) {
       <div className="draft-suggestion-label">
         <span className="ai-tag">AI</span> Draft{draft.subject ? ` with the subject "${draft.subject}"` : ''}
       </div>
-      <div className="draft-suggestion-text">{draft.body}</div>
+      <div className="draft-suggestion-text"><Linkify text={draft.body} /></div>
       {used
         ? <span className="draft-suggestion-used">In your email</span>
         : <button className="btn btn-small" onClick={onUse}>Use this draft</button>}

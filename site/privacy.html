@@ -32,7 +32,8 @@
       messages in the inbox and sent folders, plus the server name and password needed to sign in.</li>
   </ul>
   <p>The app sends email only when you write it and press Send, from the account you choose. It does
-  not delete or modify email in any connected account.</p>
+  not modify email in any connected account, and deletes email only in one case: when a temporary address
+  you made in the app expires or you delete it, the emails that address received are deleted.</p>
 
   <h2>How the data is used</h2>
   <ul>
@@ -40,6 +41,8 @@
     <li>To let you search your messages and ask questions about them.</li>
     <li>To send the emails you write, including replies and forwards. An email waits briefly after you
       press Send so it can be undone, and its content is removed from the app's database once it has been sent.</li>
+    <li>To make temporary email addresses on your own domain when you ask for one. Each forwards mail to your
+      mailbox until it expires; then the address is removed and the emails it received are deleted.</li>
   </ul>
   <p>Your data is used only to provide these features to you. It is not sold, not used for advertising,
   and not used to train AI models.</p>

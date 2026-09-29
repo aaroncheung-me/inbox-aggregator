@@ -19,6 +19,10 @@ import {
   removeNoteAddon,
   getReplyInfo,
   pinMessage,
+  getTempAddresses,
+  createTempAddress,
+  updateTempAddress,
+  deleteTempAddress,
   sendEmail,
   getSendStatus,
   cancelSend,
@@ -31,6 +35,8 @@ import Sidebar from './components/Sidebar';
 import MainPane from './components/MainPane';
 import CreditsBanner from './components/CreditsBanner';
 import DraftAssistant from './components/DraftAssistant';
+import AskBar from './components/AskBar';
+import SidebarTabs from './components/SidebarTabs';
 import SendingBar from './components/SendingBar';
 import './styles/app.scss';
 
@@ -106,11 +112,13 @@ async function syncAndReload(folder) {
   for (const r of result.results) {
     if (r.error) console.error(`Sync failed for ${r.emailAddress}: ${r.error}`);
   }
-  const [accounts, page] = await Promise.all([
+  // temp addresses too, since their email counts may have changed
+  const [accounts, page, temp] = await Promise.all([
     getAccounts(),
     getMessages({ limit: PAGE_SIZE, offset: 0, folder }),
+    getTempAddresses().catch(() => null),
   ]);
-  return { accounts, page };
+  return { accounts, page, temp };
 }
 
 function App({ userEmail, onSignOut }) {
@@ -119,6 +127,8 @@ function App({ userEmail, onSignOut }) {
   const [total, setTotal] = useState(0);
   // pinned emails, shown in their own group above Received (sent with the first page)
   const [pinned, setPinned] = useState([]);
+  // temp addresses: { available, reason, domain, addresses } (see TempAddresses)
+  const [tempAddresses, setTempAddresses] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   // bumped whenever the list is reloaded, so slower, older responses can be ignored
   const listVersion = useRef(0);
@@ -202,6 +212,7 @@ function App({ userEmail, onSignOut }) {
   // initial load
   useEffect(() => {
     getNotes().then(setNotes).catch(() => {});
+    getTempAddresses().then(setTempAddresses).catch(() => {});
 
     getMessages({ limit: PAGE_SIZE, offset: 0 })
       .then(data => {
@@ -231,8 +242,9 @@ function App({ userEmail, onSignOut }) {
         if (!needed) return;
         setSyncing(true);
         const version = ++listVersion.current;
-        return syncAndReload(listFolder.current).then(({ accounts, page }) => {
+        return syncAndReload(listFolder.current).then(({ accounts, page, temp }) => {
           setAccounts(accounts);
+          if (temp) setTempAddresses(temp);
           showNewMail(page, version);
         });
       })
@@ -280,14 +292,16 @@ function App({ userEmail, onSignOut }) {
       lastRefresh.current = Date.now();
       const version = listVersion.current;
       try {
-        const [page, freshAccounts, freshNotes] = await Promise.all([
+        const [page, freshAccounts, freshNotes, freshTemp] = await Promise.all([
           getMessages({ limit: PAGE_SIZE, offset: 0, folder: listFolder.current }),
           getAccounts(),
           getNotes(),
+          getTempAddresses().catch(() => null),
         ]);
         showNewMail(page, version);
         setAccounts(freshAccounts);
         setNotes(freshNotes);
+        if (freshTemp) setTempAddresses(freshTemp);
       } catch (err) {
         console.error(err);
       }
@@ -338,8 +352,9 @@ function App({ userEmail, onSignOut }) {
     setSyncing(true);
     try {
       const version = ++listVersion.current;
-      const { accounts, page } = await syncAndReload(listFolder.current);
+      const { accounts, page, temp } = await syncAndReload(listFolder.current);
       setAccounts(accounts);
+      if (temp) setTempAddresses(temp);
       showNewMail(page, version);
     } catch (err) {
       console.error(err);
@@ -489,6 +504,66 @@ function App({ userEmail, onSignOut }) {
     } catch (err) {
       setNotice({ type: 'error', text: err.message });
     }
+  }
+
+  // ---------- temp addresses ----------
+
+  async function handleCreateTempAddress(lifetime, label) {
+    const created = await createTempAddress(lifetime, label);
+    setTempAddresses(await getTempAddresses());
+    return created;
+  }
+
+  async function handleExtendTempAddress(id, lifetime) {
+    await updateTempAddress(id, { lifetime });
+    setTempAddresses(await getTempAddresses());
+  }
+
+  function setTempLocally(id, changes) {
+    setTempAddresses(prev => prev && {
+      ...prev,
+      addresses: prev.addresses.map(a => (a.id === id ? { ...a, ...changes } : a)),
+    });
+  }
+
+  // Like the account checkboxes: changes at once, then saves and reloads the
+  // list; puts it back if saving fails.
+  async function handleToggleTempAddress(id, shown) {
+    setTempLocally(id, { show_in_inbox: shown });
+    try {
+      await updateTempAddress(id, { show_in_inbox: shown });
+      await reloadMessages();
+    } catch (err) {
+      console.error(err);
+      setTempLocally(id, { show_in_inbox: !shown });
+      setNotice({ type: 'error', text: "Couldn't update that temp address, try again" });
+    }
+  }
+
+  // Like account colors: recolors at once, saves once the picker stops
+  // changing, then reloads the list so its emails' stripes match.
+  const tempColorTimers = useRef(new Map());
+  function handleChangeTempColor(id, color) {
+    setTempLocally(id, { color });
+    clearTimeout(tempColorTimers.current.get(id));
+    tempColorTimers.current.set(id, setTimeout(async () => {
+      tempColorTimers.current.delete(id);
+      try {
+        await updateTempAddress(id, { color });
+        await reloadMessages();
+      } catch (err) {
+        console.error(err);
+        setNotice({ type: 'error', text: "Couldn't save that color, try again" });
+        getTempAddresses().then(setTempAddresses).catch(() => {});
+      }
+    }, 400));
+  }
+
+  // its emails are deleted too, so the list is reloaded
+  async function handleDeleteTempAddress(id) {
+    await deleteTempAddress(id);
+    setTempAddresses(await getTempAddresses());
+    await reloadMessages();
   }
 
   // ---------- writing and sending email ----------
@@ -916,6 +991,15 @@ function App({ userEmail, onSignOut }) {
         }}
         onApplyOrganizing={handleApplyOrganizing}
         onNewEmail={handleNewEmail}
+        tempAddresses={{
+          temp: tempAddresses,
+          now,
+          onCreate: handleCreateTempAddress,
+          onExtend: handleExtendTempAddress,
+          onToggle: handleToggleTempAddress,
+          onChangeColor: handleChangeTempColor,
+          onDelete: handleDeleteTempAddress,
+        }}
         drafting={draft && {
           title: DRAFT_TITLES[draft.mode],
           onBackToDraft: showDraft,
@@ -957,6 +1041,25 @@ function App({ userEmail, onSignOut }) {
         // while writing, the list screen is the email's assistant
         backLabel={draft ? 'Assistant' : tab === 'notes' ? 'Notes' : 'Inbox'}
         onReply={handleReply}
+        // Phone: emails, notes and answers keep the list screen's top (the ask
+        // box and Inbox | Notes), so moving between screens doesn't change the
+        // layout; the tabs lead back to the lists. Not while writing, which
+        // has its own bar.
+        phoneHeader={!draft && (
+          <div className="phone-header phone-only">
+            <AskBar
+              onAsk={handleAsk}
+              onSearch={query => { setTab('inbox'); handleSearch(query); showListScreen(); }}
+              asking={chatLoading}
+              topAction={{ label: 'New email', onClick: handleNewEmail }}
+            />
+            <SidebarTabs
+              tab={tab}
+              onChange={next => { setTab(next); showListScreen(); }}
+              dueCount={dueReminderCount(notes, now)}
+            />
+          </div>
+        )}
         onTogglePin={handleTogglePin}
         compose={draft && {
           draft,

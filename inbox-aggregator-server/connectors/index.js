@@ -12,6 +12,7 @@
 //   getReplyHeaders({ credentials, messageExternalId })
 //     -> { messageId, references, replyTo }         what a reply to that message needs
 //   send({ credentials, mail, threadId })           mail: nodemailer message options
+//   deleteMessages({ credentials, messageExternalIds }) -> count   (IMAP only, for temp addresses)
 //   isRateLimitError(err)
 const gmail = require('./gmail');
 const imap = require('./imap');

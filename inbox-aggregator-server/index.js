@@ -33,6 +33,15 @@ const {
 } = require('./lib/notes');
 const { syncAccount, backfillAccount } = require('./lib/sync');
 const { queueEmail, cancelEmail, emailStatus, sendDue } = require('./lib/outbox');
+const {
+  listTempAddresses,
+  createTempAddress,
+  updateTempAddress,
+  hiddenTempAddresses,
+  deleteTempAddress,
+  expireTempAddresses,
+  markTempMail,
+} = require('./lib/tempAddresses');
 const { connectorFor } = require('./connectors');
 const { UserError } = require('./lib/errors');
 const { requireUser, createConnectState, readConnectState } = require('./lib/auth');
@@ -115,6 +124,7 @@ app.post('/cron/sync', (req, res) => {
   if (!cronSecretMatches(req.get('x-cron-secret'))) return res.status(401).send('Unauthorized');
   // catches any email left waiting by a server restart
   sendDue().catch(err => console.error('Sending overdue email failed:', err));
+  expireTempAddresses().catch(err => console.error('Expiring temp addresses failed:', err));
   // still a success for the scheduler: the previous run is doing the work
   if (backgroundSyncRunning) return res.status(202).json({ started: false, reason: 'previous run still going' });
 
@@ -285,6 +295,12 @@ app.get('/messages', async (req, res) => {
       .or('labels.cs.{INBOX},labels.not.cs.{SENT}')
       .not('labels', 'ov', '{SPAM,TRASH}')
       .is('pinned_at', null);
+  // emails to temp addresses unchecked in the accounts section (a missing To counts as not theirs)
+  if (!sent) {
+    for (const address of await hiddenTempAddresses(req.userId)) {
+      query = query.or(`to_recipients.is.null,to_recipients.not.ilike.%${address}%`);
+    }
+  }
 
   const [list, pinned] = await Promise.all([
     query
@@ -303,7 +319,13 @@ app.get('/messages', async (req, res) => {
 
   if (list.error) throw list.error;
   if (pinned.error) throw pinned.error;
-  res.json({ messages: list.data, pinned: pinned.data, total: list.count, limit, offset });
+  res.json({
+    messages: await markTempMail(req.userId, list.data),
+    pinned: await markTempMail(req.userId, pinned.data),
+    total: list.count,
+    limit,
+    offset,
+  });
 });
 
 // Basic search, no AI: ?q= words plus Gmail-style operators
@@ -344,8 +366,9 @@ app.get('/messages/:messageId', async (req, res) => {
   const accountIds = await userAccountIds(req.userId);
   if (!data || !accountIds.includes(data.account_id)) return res.status(404).send('Message not found');
 
-  // the notes stuck to this email
-  res.json({ ...data, notes: await notesForMessage(req.userId, data.id) });
+  // the notes stuck to this email, and which temp address it came to, if any
+  const [marked] = await markTempMail(req.userId, [data]);
+  res.json({ ...marked, notes: await notesForMessage(req.userId, data.id) });
 });
 
 // Body: { pinned: boolean }. Pins live only in the app. Returns { pinned_at }.
@@ -396,6 +419,34 @@ app.get('/messages/:messageId/reply-info', async (req, res) => {
     res.json({ replyTo: null });
   }
 });
+
+// ---------- temp addresses ----------
+// Throwaway addresses on the user's own domain, removed with their emails when
+// they expire (see lib/tempAddresses.js).
+
+// { available, reason, domain, addresses: [{ id, address, label, created_at, expires_at, received }] }
+app.get('/temp-addresses', async (req, res) => {
+  res.json(await listTempAddresses(req.userId));
+});
+
+// Body: { lifetime: '1h' | '1d' | '1w' | '1m', label? }. Returns the new address.
+app.post('/temp-addresses', withUserErrors(async (req, res) => {
+  res.status(201).json(await createTempAddress(req.userId, req.body || {}));
+}));
+
+// Body: { lifetime? (keeps it that long from now), color?, show_in_inbox? }.
+// Returns { expires_at, color, show_in_inbox }.
+app.patch('/temp-addresses/:id', withUserErrors(async (req, res) => {
+  const updated = await updateTempAddress(req.userId, req.params.id, req.body || {});
+  if (!updated) return res.status(404).send('Temp address not found');
+  res.json(updated);
+}));
+
+// Deletes it now, with the emails it received.
+app.delete('/temp-addresses/:id', withUserErrors(async (req, res) => {
+  if (!await deleteTempAddress(req.userId, req.params.id)) return res.status(404).send('Temp address not found');
+  res.status(204).end();
+}));
 
 // ---------- sending ----------
 
@@ -665,6 +716,7 @@ app.use((err, req, res, next) => {
 
 app.listen(process.env.PORT, () => {
   console.log(`Server listening on port ${process.env.PORT}`);
-  // email that was waiting when the server last stopped
+  // email that was waiting when the server last stopped, and temp addresses that ran out meanwhile
   sendDue().catch(err => console.error('Sending overdue email failed:', err));
+  expireTempAddresses().catch(err => console.error('Expiring temp addresses failed:', err));
 });

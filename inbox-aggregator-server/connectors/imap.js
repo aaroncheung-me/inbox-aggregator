@@ -267,6 +267,42 @@ async function downloadAttachment({ credentials, messageExternalId, attachmentEx
   });
 }
 
+// Permanently deletes stored messages from the mailbox, e.g. the emails an
+// expired temp address received. messageExternalIds are "<folder path>:<uidValidity>:<uid>".
+// A folder renumbered since syncing is skipped rather than risk deleting the wrong mail.
+// Returns how many were deleted.
+async function deleteMessages({ credentials, messageExternalIds }) {
+  const byFolder = new Map(); // "path:uidValidity" -> uids
+  for (const externalId of messageExternalIds) {
+    const parts = externalId.split(':');
+    const uid = parts.pop();
+    const key = parts.join(':');
+    if (!byFolder.has(key)) byFolder.set(key, []);
+    byFolder.get(key).push(uid);
+  }
+  if (!byFolder.size) return 0;
+
+  let deleted = 0;
+  await withClient(credentials, async client => {
+    for (const [key, uids] of byFolder) {
+      const parts = key.split(':');
+      const uidValidity = parts.pop();
+      const path = parts.join(':');
+      const lock = await client.getMailboxLock(path);
+      try {
+        if (String(client.mailbox.uidValidity) !== uidValidity) {
+          console.error(`Not deleting from ${path}: the folder was renumbered since these messages were synced`);
+          continue;
+        }
+        if (await client.messageDelete(uids.join(','), { uid: true })) deleted += uids.length;
+      } finally {
+        lock.release();
+      }
+    }
+  });
+  return deleted;
+}
+
 // ---------- sending ----------
 
 // The original's headers a reply needs: { messageId, references: [...], replyTo }.
@@ -342,6 +378,7 @@ module.exports = {
   fetchNew,
   fetchPage,
   downloadAttachment,
+  deleteMessages,
   getReplyHeaders,
   send,
   isRateLimitError,

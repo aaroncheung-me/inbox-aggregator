@@ -10,7 +10,8 @@ const ACCOUNT_OPTIONS = [
   { provider: 'imap', label: 'Other email (IMAP)', hint: 'Your own domain, iCloud, Yahoo…', kind: 'form' },
 ];
 
-function AddAccountMenu({ onAccountConnected }) {
+// onNewTemp: when given, the menu also offers a temp address (made in the accounts section).
+function AddAccountMenu({ onAccountConnected, onNewTemp }) {
   const [open, setOpen] = useState(false);
   const [imapDialogOpen, setImapDialogOpen] = useState(false);
   const [startingSignIn, setStartingSignIn] = useState(false);
@@ -60,6 +61,16 @@ function AddAccountMenu({ onAccountConnected }) {
               <span className="add-account-hint">{option.hint}</span>
             </button>
           ))}
+          {onNewTemp && (
+            <button
+              className="add-account-option"
+              role="menuitem"
+              onClick={() => { setOpen(false); onNewTemp(); }}
+            >
+              <span className="add-account-label">Temp address</span>
+              <span className="add-account-hint">A throwaway address that deletes itself</span>
+            </button>
+          )}
           {error && <p className="add-account-error" role="alert">{error}</p>}
         </div>
       )}

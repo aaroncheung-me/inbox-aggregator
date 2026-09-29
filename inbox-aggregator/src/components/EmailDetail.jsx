@@ -2,6 +2,8 @@ import { useState } from 'react';
 import EmailStickyNotes from './EmailStickyNotes';
 import PaneBar from './PaneBar';
 import ActionMenu from './ActionMenu';
+import { timeLeft } from '../format';
+import Linkify from './Linkify';
 
 // One email in the main pane. Its actions sit in the top bar: on a phone,
 // Reply plus a More menu for the rest, since the full row doesn't fit.
@@ -28,7 +30,12 @@ function EmailDetail({ back, message, account, loading, error, now, allNotes, on
           onCreate={onCreateNote}
           onAiCreate={onAiCreateNote}
         />
-        {account && (
+        {message.temp_address ? (
+          <div className="received-by">
+            <span className="temp-dot" style={{ borderColor: message.temp_address.color || undefined }} aria-hidden="true" />
+            Temp: {message.temp_address.address}
+          </div>
+        ) : account && (
           <div className="received-by">
             <span className="account-dot" style={{ background: account.color }} aria-hidden="true" />
             {account.display_name || account.email_address}
@@ -38,6 +45,13 @@ function EmailDetail({ back, message, account, loading, error, now, allNotes, on
           {message.pinned_at && <span className="pinned-tag">Pinned</span>}
           {message.subject || '(no subject)'}
         </div>
+        {message.temp_address && (
+          <div className="temp-notice">
+            Sent to your temp address {message.temp_address.address}
+            {message.temp_address.label && <> ({message.temp_address.label})</>}.
+            {' '}It and this email are deleted in {timeLeft(message.temp_address.expires_at, now)}.
+          </div>
+        )}
         <div className="meta">
           {message.sender} · {new Date(message.received_at).toLocaleString()}
           <div className="meta-recipients">To: {message.to_recipients || '(nobody)'}</div>
@@ -50,7 +64,7 @@ function EmailDetail({ back, message, account, loading, error, now, allNotes, on
             ))}
           </ul>
         )}
-        <div className="body">{message.body || message.snippet}</div>
+        <div className="body"><Linkify text={message.body || message.snippet} /></div>
       </div>
     );
   }

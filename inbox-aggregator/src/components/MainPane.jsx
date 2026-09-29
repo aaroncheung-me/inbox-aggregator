@@ -36,6 +36,8 @@ function MainPane({
   onReply,
   onTogglePin,
   compose,
+  // phone only: the ask box and Inbox | Notes, kept above every page but the writing screen
+  phoneHeader = null,
 }) {
   let desktopBack = null;
   if (compose) {
@@ -45,7 +47,8 @@ function MainPane({
   }
   const back = (
     <>
-      <button className="pane-back phone-only" onClick={onBackToList}>← {backLabel}</button>
+      {/* on a phone the header's tabs lead back to the lists instead */}
+      {!phoneHeader && <button className="pane-back phone-only" onClick={onBackToList}>← {backLabel}</button>}
       {desktopBack && (
         <button className="pane-back desktop-only" onClick={desktopBack.onClick}>{desktopBack.label}</button>
       )}
@@ -111,7 +114,7 @@ function MainPane({
           <ChatPanel
             history={chatHistory}
             loading={chatLoading}
-          pending={chatPending}
+            pending={chatPending}
             error={chatError}
             onOpenMessage={onOpenMessage}
             onOpenNote={noteActions.onOpenNote}
@@ -122,7 +125,12 @@ function MainPane({
     );
   }
 
-  return <div className="main-pane">{content}</div>;
+  return (
+    <div className="main-pane">
+      {phoneHeader}
+      {content}
+    </div>
+  );
 }
 
 export default MainPane;

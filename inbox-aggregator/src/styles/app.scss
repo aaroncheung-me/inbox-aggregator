@@ -83,6 +83,12 @@ $pane-column: 680px;
   overflow: hidden;
 }
 
+// phone only: the list screen's ask box and tabs, kept above emails, notes and answers
+.phone-header {
+  flex-shrink: 0;
+  background: $surface;
+}
+
 .pane-bar {
   flex-shrink: 0;
   padding: $space-2 max(#{$space-6}, calc((100% - #{$pane-column}) / 2));
@@ -141,11 +147,10 @@ $pane-column: 680px;
   position: relative;
 }
 
+// placed against the screen by ActionMenu (top/bottom and left/right set inline)
 .action-menu-options {
-  position: absolute;
-  top: calc(100% + #{$space-1});
-  right: 0;
-  z-index: 10;
+  position: fixed;
+  z-index: 30;
   display: flex;
   flex-direction: column;
   min-width: 160px;
@@ -166,7 +171,12 @@ $pane-column: 680px;
     &:hover {
       background: $accent-soft;
     }
+
+    &.danger {
+      color: $danger;
+    }
   }
+
 }
 
 // ---------- ask bar (sticky, top of sidebar) ----------
@@ -344,6 +354,151 @@ $pane-column: 680px;
   list-style: none;
   margin: 0;
   padding: 0 0 $space-2;
+}
+
+// ---------- temp addresses (rows under the accounts) ----------
+// Dashed means temporary: the dot here, and the stripe on the emails it received.
+.temp-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border: 2px dashed $text-secondary;
+  border-radius: 50%;
+}
+
+// as a color picker button, it takes the account dot's size (bigger on a phone)
+.account-dot-button.temp-dot {
+  border: 2px dashed $text-secondary;
+  background: transparent;
+}
+
+.temp-addresses {
+  display: flex;
+  flex-direction: column;
+}
+
+.temp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 $space-2;
+}
+
+// the top line is an .account-row (same padding, checkbox and dot sizes)
+.temp-row {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: $space-1;
+
+  &:hover {
+    background: $accent-soft;
+  }
+
+  .account-row:hover {
+    background: none;
+  }
+}
+
+
+// unchecked: its emails are left out of the inbox, like an unchecked account
+.temp-row.hidden-account .temp-address {
+  color: $text-secondary;
+  text-decoration: line-through;
+}
+
+.temp-address {
+  font-family: $font-mono;
+}
+
+// lines up under the address: row padding, checkbox, dot, and the two gaps
+.temp-row-meta {
+  padding-left: calc(#{$space-4} + 13px + 14px + #{$space-2 * 2});
+  padding-right: $space-4;
+  color: $text-secondary;
+}
+
+// a symbol button (copy, options): square, so a row of them stays compact
+.icon-button {
+  min-width: 28px;
+  padding-left: $space-1;
+  padding-right: $space-1;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.temp-confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $space-1 $space-2;
+  padding-top: $space-1;
+}
+
+.temp-confirm {
+  color: $danger;
+}
+
+.temp-form {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+  margin: 0 $space-4 $space-2;
+  padding: $space-2 $space-3;
+  border: 1px solid $border;
+  border-radius: 6px;
+  background: $bg;
+
+  input,
+  select {
+    font-family: inherit;
+    font-size: 13px;
+    padding: $space-1 $space-2;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $surface;
+    color: $text-primary;
+  }
+}
+
+.temp-form-title {
+  font-weight: 600;
+}
+
+.temp-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $space-2;
+}
+
+.temp-hint {
+  margin: 0;
+  color: $text-secondary;
+}
+
+.temp-error {
+  margin: 0 $space-4 $space-2;
+}
+
+// on emails that came to a temp address
+.temp-chip {
+  display: inline-block;
+  margin-right: $space-1;
+  padding: 0 5px;
+  border: 1px solid $border;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: $text-secondary;
+  vertical-align: 1px;
+}
+
+.temp-notice {
+  margin-bottom: $space-3;
+  padding: $space-2 $space-3;
+  border-radius: 6px;
+  background: $accent-soft;
+  font-size: 13px;
 }
 
 .account-row {
@@ -733,6 +888,7 @@ $pane-column: 680px;
 
 // ---------- message list ----------
 .message-list-item {
+  position: relative;
   padding: $space-3 $space-4;
   border-bottom: 1px solid $border;
   cursor: pointer;
@@ -745,6 +901,21 @@ $pane-column: 680px;
 
   &.selected {
     background: $accent-soft;
+  }
+
+  // mail to a temp address: a dashed stripe in that address's color
+  &.temp-mail {
+    box-shadow: none;
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 4px;
+      background: repeating-linear-gradient(to bottom, var(--account-color) 0 6px, transparent 6px 10px);
+    }
   }
 }
 
@@ -1055,8 +1226,10 @@ $pane-column: 680px;
 }
 
 // ---------- writing an email ----------
+// fills the page, so the text box can take whatever height is left
 .compose {
   max-width: 680px;
+  min-height: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -1123,6 +1296,7 @@ $pane-column: 680px;
 }
 
 .compose-body {
+  flex: 1 0 auto;
   min-height: 260px;
   resize: vertical;
   padding: $space-3;
@@ -1552,7 +1726,14 @@ $pane-column: 680px;
 }
 
 // ---------- note view ----------
+// the note's text box fills whatever height the page has left, like an email's
+.note-detail {
+  display: flex;
+  flex-direction: column;
+}
+
 .note-detail .note-body {
+  flex: 1 0 auto;
   margin-bottom: $space-3;
 }
 
@@ -2147,6 +2328,8 @@ $sticky-edge: #EADC8A;
 
   // iOS zooms the page when focusing a field with text under 16px
   .ask-bar-row input,
+  .temp-form input,
+  .temp-form select,
   .compose-row input,
   .compose-row select,
   .compose-body,
@@ -2243,6 +2426,16 @@ $sticky-edge: #EADC8A;
   .account-dot-button {
     width: 22px;
     height: 22px;
+  }
+
+  .temp-row-meta {
+    padding-left: calc(#{$space-4} + 18px + 22px + #{$space-2 * 2});
+  }
+
+  .icon-button {
+    min-width: 36px;
+    min-height: 32px;
+    font-size: 16px;
   }
 
   .add-account-option {

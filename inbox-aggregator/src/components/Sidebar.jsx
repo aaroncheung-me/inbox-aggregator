@@ -54,6 +54,8 @@ function Sidebar({
   focusAskBox = false,
   focusNoteBox = false,
   onNewEmail,
+  // temp addresses, shown under the accounts: { temp, now, onCreate, onExtend, onDelete }
+  tempAddresses = null,
   folder,
   onFolderChange,
   // while an email is being written: { title, onBackToDraft, onDiscard, chat }.
@@ -203,6 +205,7 @@ function Sidebar({
                   onToggleAccount={onToggleAccount}
                   onChangeColor={onChangeAccountColor}
                   onAccountConnected={onAccountConnected}
+                  tempAddresses={tempAddresses}
                 />
               </>
             )}
@@ -220,6 +223,7 @@ function Sidebar({
           onAccountConnected={onAccountConnected}
           userEmail={userEmail}
           onSignOut={onSignOut}
+          tempAddresses={tempAddresses}
         />
       ) : (
         <div className="sidebar-footer">
