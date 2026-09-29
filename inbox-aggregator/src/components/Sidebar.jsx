@@ -17,6 +17,8 @@ function Sidebar({
   onSync,
   syncing,
   messages,
+  // temp address -> its color, for the stripes of the emails it received
+  tempColors,
   pinned = [],
   selectedId,
   onSelect,
@@ -68,7 +70,6 @@ function Sidebar({
   const isPhone = useMediaQuery(PHONE_LAYOUT);
 
   const accountColors = new Map(accounts.map(a => [a.id, a.color]));
-  const tempColors = new Map((tempAddresses?.temp?.addresses || []).map(a => [a.address, a.color]));
 
   const noticeBanner = notice && (
     <div className={`notice notice-${notice.type}`} role="status">

@@ -24,7 +24,7 @@ export function splitAddresses(text) {
 }
 
 // 'Ann <A@x.com>' -> 'a@x.com'
-export function addressOf(entry) {
+function addressOf(entry) {
   const match = /<([^>]+)>/.exec(entry);
   return (match ? match[1] : entry).trim().toLowerCase();
 }

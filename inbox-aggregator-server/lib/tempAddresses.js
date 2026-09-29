@@ -252,7 +252,6 @@ async function markTempMail(userId, messages) {
 }
 
 module.exports = {
-  LIFETIMES,
   listTempAddresses,
   createTempAddress,
   updateTempAddress,

@@ -43,9 +43,4 @@ async function deleteForwarder(address, forwardTo) {
   }
 }
 
-// [{ dest, forward }] for the domain: dest is the forwarder's address.
-async function listForwarders(domain) {
-  return (await uapi('Email', 'list_forwarders', { domain })) || [];
-}
-
-module.exports = { cpanelConfigured, addForwarder, deleteForwarder, listForwarders };
+module.exports = { cpanelConfigured, addForwarder, deleteForwarder };

@@ -235,14 +235,18 @@ async function fetchPage({ credentials, pageToken }) {
   });
 }
 
-// Opens the folder holding one stored message and runs fn(client, uid).
-// messageExternalId is "<folder path>:<uidValidity>:<uid>"; the folder path can
-// itself contain ":", so the last two parts are split off from the right.
-async function withStoredMessage(credentials, messageExternalId, fn) {
+// A stored message's id is "<folder path>:<uidValidity>:<uid>". The folder path
+// can itself contain ":", so the last two parts are split off from the right.
+function parseExternalId(messageExternalId) {
   const parts = messageExternalId.split(':');
   const uid = parts.pop();
   const uidValidity = parts.pop();
-  const path = parts.join(':');
+  return { path: parts.join(':'), uidValidity, uid };
+}
+
+// Opens the folder holding one stored message and runs fn(client, uid).
+async function withStoredMessage(credentials, messageExternalId, fn) {
+  const { path, uidValidity, uid } = parseExternalId(messageExternalId);
 
   return withClient(credentials, async client => {
     const lock = await client.getMailboxLock(path);
@@ -268,26 +272,21 @@ async function downloadAttachment({ credentials, messageExternalId, attachmentEx
 }
 
 // Permanently deletes stored messages from the mailbox, e.g. the emails an
-// expired temp address received. messageExternalIds are "<folder path>:<uidValidity>:<uid>".
-// A folder renumbered since syncing is skipped rather than risk deleting the wrong mail.
-// Returns how many were deleted.
+// expired temp address received. A folder renumbered since syncing is skipped
+// rather than risk deleting the wrong mail. Returns how many were deleted.
 async function deleteMessages({ credentials, messageExternalIds }) {
-  const byFolder = new Map(); // "path:uidValidity" -> uids
+  const byFolder = new Map(); // "path:uidValidity" -> { path, uidValidity, uids }
   for (const externalId of messageExternalIds) {
-    const parts = externalId.split(':');
-    const uid = parts.pop();
-    const key = parts.join(':');
-    if (!byFolder.has(key)) byFolder.set(key, []);
-    byFolder.get(key).push(uid);
+    const { path, uidValidity, uid } = parseExternalId(externalId);
+    const key = `${path}:${uidValidity}`;
+    if (!byFolder.has(key)) byFolder.set(key, { path, uidValidity, uids: [] });
+    byFolder.get(key).uids.push(uid);
   }
   if (!byFolder.size) return 0;
 
   let deleted = 0;
   await withClient(credentials, async client => {
-    for (const [key, uids] of byFolder) {
-      const parts = key.split(':');
-      const uidValidity = parts.pop();
-      const path = parts.join(':');
+    for (const { path, uidValidity, uids } of byFolder.values()) {
       const lock = await client.getMailboxLock(path);
       try {
         if (String(client.mailbox.uidValidity) !== uidValidity) {

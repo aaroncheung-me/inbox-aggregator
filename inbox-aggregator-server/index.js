@@ -13,7 +13,6 @@ const {
   saveConnectedAccount,
   updateAccountSettings,
 } = require('./lib/accounts');
-const { embedPending } = require('./lib/embeddings');
 const { keywordSearch, parseSearchQuery } = require('./lib/search');
 const { askAssistant } = require('./lib/assistant');
 const { aiSaveNote } = require('./lib/aiSave');
@@ -174,27 +173,16 @@ app.post('/connect/gmail', (req, res) => {
 
 // Body: { email, password, host, port }. Logs in once to check the details
 // before saving anything. 400 with { error } when the details don't work.
-app.post('/connect/imap', async (req, res) => {
-  try {
-    const { emailAddress, credentials } = await imap.connectAccount(req.body || {});
-    await saveConnectedAccount(req.userId, { provider: 'imap', emailAddress, credentials });
-    res.json({ emailAddress });
-  } catch (err) {
-    if (err instanceof UserError) return res.status(400).json({ error: err.message });
-    throw err;
-  }
-});
+app.post('/connect/imap', withUserErrors(async (req, res) => {
+  const { emailAddress, credentials } = await imap.connectAccount(req.body || {});
+  await saveConnectedAccount(req.userId, { provider: 'imap', emailAddress, credentials });
+  res.json({ emailAddress });
+}));
 
 // ---------- accounts ----------
 
 app.get('/accounts', async (req, res) => {
   res.json(await listAccounts(req.userId));
-});
-
-app.get('/accounts/:accountId', async (req, res) => {
-  const account = await getAccount(req.userId, req.params.accountId);
-  if (!account) return res.status(404).send('Account not found');
-  res.json(account);
 });
 
 // Body: { show_in_inbox?: boolean, color?: "#RRGGBB" }
@@ -227,12 +215,6 @@ app.post('/sync', async (req, res) => {
   });
 });
 
-app.post('/sync/:accountId', async (req, res) => {
-  const account = await getAccount(req.userId, req.params.accountId);
-  if (!account) return res.status(404).send('Account not found');
-  res.json(await syncAccount(account));
-});
-
 // Occasional full-history pull, ~1000 messages per call at the default.
 // Call again with ?pageToken=<returned nextPageToken> to keep going further back.
 app.post('/backfill/:accountId', async (req, res) => {
@@ -254,14 +236,6 @@ app.post('/backfill/:accountId', async (req, res) => {
   }
 
   res.json({ ...result, message });
-});
-
-app.post('/embed/:accountId', async (req, res) => {
-  const account = await getAccount(req.userId, req.params.accountId);
-  if (!account) return res.status(404).send('Account not found');
-
-  const count = await embedPending(account.id);
-  res.send(count ? `Embedded ${count} messages` : 'Nothing to embed');
 });
 
 // ---------- messages ----------
@@ -490,6 +464,18 @@ app.delete('/send/:outboxId', async (req, res) => {
 // A note is text; reminders, links to emails or other notes, and pins are
 // add-ons attached to it. See lib/notes.js for the shapes returned.
 
+// An AI provider (Anthropic or OpenAI) failed: records it for the credits
+// banner and answers 502 with a message the app can show (plus `extra`).
+// Anything that isn't a provider error is rethrown, for withUserErrors or the
+// general error handler.
+function sendProviderFailure(res, err, what, extra = '') {
+  noteProviderFailure(err);
+  const problem = describeProviderError(err);
+  if (!problem) throw err;
+  console.error(`${what} failed:`, err);
+  res.status(502).json({ error: `${problem.message}${extra}`, outOfCredits: problem.outOfCredits });
+}
+
 // Runs a route, answering 400 with { error } for problems the user can fix.
 function withUserErrors(handler) {
   return async (req, res) => {
@@ -542,11 +528,7 @@ app.post('/notes/ai-save', withUserErrors(async (req, res) => {
     noteProviderSuccess('anthropic');
     res.status(201).json(saved);
   } catch (err) {
-    noteProviderFailure(err);
-    const problem = describeProviderError(err);
-    if (!problem) throw err;
-    console.error('AI save request failed:', err);
-    res.status(502).json({ error: `${problem.message} Your note was not saved; try again or use Save.`, outOfCredits: problem.outOfCredits });
+    sendProviderFailure(res, err, 'AI save', ' Your note was not saved; try again or use Save.');
   }
 }));
 
@@ -559,11 +541,7 @@ app.post('/notes/organize', async (req, res) => {
     noteProviderSuccess('anthropic');
     res.json(suggestions);
   } catch (err) {
-    noteProviderFailure(err);
-    const problem = describeProviderError(err);
-    if (!problem) throw err;
-    console.error('Organize request failed:', err);
-    res.status(502).json({ error: problem.message, outOfCredits: problem.outOfCredits });
+    sendProviderFailure(res, err, 'Organize');
   }
 });
 
@@ -701,7 +679,7 @@ app.get('/status', (req, res) => {
 
 // Body: the raw recording (Content-Type: audio/webm, audio/mp4, ...). Returns { text }.
 // The audio is only held in memory while it's transcribed; it's never stored.
-app.post('/transcribe', express.raw({ type: TRANSCRIBE_TYPES, limit: '10mb' }), async (req, res) => {
+app.post('/transcribe', express.raw({ type: TRANSCRIBE_TYPES, limit: '10mb' }), withUserErrors(async (req, res) => {
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'No recording was received' });
 
   try {
@@ -713,16 +691,12 @@ app.post('/transcribe', express.raw({ type: TRANSCRIBE_TYPES, limit: '10mb' }), 
     if (!text) return res.status(422).json({ error: "Couldn't hear anything in that recording" });
     res.json({ text });
   } catch (err) {
-    if (err instanceof UserError) return res.status(400).json({ error: err.message });
-    noteProviderFailure(err);
-    const problem = describeProviderError(err);
-    if (!problem) throw err;
-    console.error('Transcription failed:', err);
-    res.status(502).json({ error: problem.message, outOfCredits: problem.outOfCredits });
+    sendProviderFailure(res, err, 'Transcription');
   }
-});
+}));
 
-// Express 5 sends errors thrown in async routes here.
+// Express 5 sends errors thrown in async routes here. It needs all four
+// arguments, unused `next` included, to be treated as an error handler.
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).send('Something went wrong, check the server terminal');

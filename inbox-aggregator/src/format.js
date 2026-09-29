@@ -35,10 +35,11 @@ export function shortDate(isoString) {
   });
 }
 
-// "3", or "2 of 3 shown" when some accounts are unchecked
-export function accountsSummary(accounts) {
+// "3", or "2 of 3 shown" when some accounts are unchecked, plus ", 1 temp" for temp addresses
+export function accountsSummary(accounts, tempCount = 0) {
   const shownCount = accounts.filter(a => a.show_in_inbox).length;
-  return shownCount === accounts.length ? `${accounts.length}` : `${shownCount} of ${accounts.length} shown`;
+  const summary = shownCount === accounts.length ? `${accounts.length}` : `${shownCount} of ${accounts.length} shown`;
+  return tempCount > 0 ? `${summary}, ${tempCount} temp` : summary;
 }
 
 // "45m", "5h", "3d" until the given time; "now" once it's passed.

@@ -21,7 +21,7 @@ function AccountsPanel({ accounts, onToggleAccount, onChangeColor, onAccountConn
           aria-expanded={expanded}
         >
           <span className="accounts-chevron" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-          Accounts <span className="accounts-summary">({accountsSummary(accounts)}{tempCount > 0 && `, ${tempCount} temp`})</span>
+          Accounts <span className="accounts-summary">({accountsSummary(accounts, tempCount)})</span>
         </button>
         <AddAccountMenu
           onAccountConnected={onAccountConnected}

@@ -225,4 +225,4 @@ async function sendDue() {
   for (const row of data) schedule(row.id, row.send_at);
 }
 
-module.exports = { queueEmail, cancelEmail, emailStatus, sendDue, UNDO_SECONDS };
+module.exports = { queueEmail, cancelEmail, emailStatus, sendDue };

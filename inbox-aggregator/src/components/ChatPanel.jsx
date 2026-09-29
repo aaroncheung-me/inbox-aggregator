@@ -11,7 +11,7 @@ function formatDate(isoString) {
 }
 
 // Sources are emails ({ kind: 'email', id, subject, sender, received_at })
-// or notes ({ kind: 'note', id, title }); older answers have no kind (emails).
+// or notes ({ kind: 'note', id, title }).
 const sourceKey = source => `${source.kind === 'note' ? 'note' : 'email'}:${source.id}`;
 
 // Turns [#123] (email) and [note 12] markers in the answer into numbered

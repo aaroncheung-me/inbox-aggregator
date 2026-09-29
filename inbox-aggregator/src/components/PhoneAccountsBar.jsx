@@ -40,7 +40,7 @@ function PhoneAccountsBar({
         <button className="accounts-heading" onClick={() => setExpanded(prev => !prev)} aria-expanded={expanded}>
           {/* the panel opens upward */}
           <span className="accounts-chevron" aria-hidden="true">{expanded ? '▾' : '▴'}</span>
-          Accounts <span className="accounts-summary">({accountsSummary(accounts)}{tempCount > 0 && `, ${tempCount} temp`})</span>
+          Accounts <span className="accounts-summary">({accountsSummary(accounts, tempCount)})</span>
         </button>
         {/* beside the heading, so it's reachable without opening the panel */}
         <AddAccountMenu

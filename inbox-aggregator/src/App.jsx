@@ -927,6 +927,8 @@ function App({ userEmail, onSignOut }) {
   }
 
   const selectedAccount = accounts.find(a => a.id === selectedMessage?.account_id);
+  // temp address -> its current color, read by the list and the open email so recoloring shows at once
+  const tempColors = new Map((tempAddresses?.addresses || []).map(a => [a.address, a.color]));
 
   return (
     <div className={`app phone-shows-${phoneScreen}`}>
@@ -949,6 +951,7 @@ function App({ userEmail, onSignOut }) {
         onSync={handleSync}
         syncing={syncing}
         messages={messages}
+        tempColors={tempColors}
         pinned={pinned}
         selectedId={selectedMessageId}
         onSelect={openMessage}
@@ -1021,7 +1024,7 @@ function App({ userEmail, onSignOut }) {
         selectedMessageId={selectedMessageId}
         selectedMessage={selectedMessage}
         selectedAccount={selectedAccount}
-        tempColors={new Map((tempAddresses?.addresses || []).map(a => [a.address, a.color]))}
+        tempColors={tempColors}
         messageLoading={messageLoading}
         messageError={messageError}
         chatHistory={chatHistory}

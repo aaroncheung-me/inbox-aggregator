@@ -165,4 +165,4 @@ async function suggestOrganizing({ userId, timeZone }) {
   };
 }
 
-module.exports = { suggestOrganizing, checkSuggestions };
+module.exports = { suggestOrganizing };
