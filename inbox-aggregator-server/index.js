@@ -343,8 +343,22 @@ app.get('/messages/search', async (req, res) => {
 
   // one extra row tells us whether there's another page
   const rows = await keywordSearch(req.userId, accountIds, text, { filters, limit: limit + 1, offset });
+  const found = rows.slice(0, limit).map(({ body, score, ...message }) => message);
+
+  // search doesn't return recipients, which the Temp mark needs
+  let recipients = new Map();
+  if (found.length) {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('id, to_recipients, cc_recipients')
+      .in('id', found.map(m => m.id));
+    if (error) throw error;
+    recipients = new Map(data.map(m => [m.id, m]));
+  }
+  const marked = await markTempMail(req.userId, found.map(m => ({ ...m, ...recipients.get(m.id) })));
+
   res.json({
-    messages: rows.slice(0, limit).map(({ body, score, ...message }) => message),
+    messages: marked,
     hasMore: rows.length > limit,
     limit,
     offset,

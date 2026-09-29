@@ -8,8 +8,10 @@ function recipientsLabel(recipients) {
   return `To: ${senderName(list[0])}${list.length > 1 ? ` +${list.length - 1}` : ''}`;
 }
 
-// showRecipients: for sent mail, the people it went to instead of the sender
-function MessageList({ messages, accountColors, selectedId, onSelect, hasMore, loadingMore, onLoadMore, total, showRecipients = false }) {
+// showRecipients: for sent mail, the people it went to instead of the sender.
+// Colors come from the app's current accounts and temp addresses (accountColors,
+// tempColors: address -> color), so recoloring one shows at once.
+function MessageList({ messages, accountColors, tempColors, selectedId, onSelect, hasMore, loadingMore, onLoadMore, total, showRecipients = false }) {
   return (
     <div>
       {messages.map(m => (
@@ -17,7 +19,11 @@ function MessageList({ messages, accountColors, selectedId, onSelect, hasMore, l
           key={m.id}
           // mail to a temp address takes that address's color, with a dashed stripe
           className={`message-list-item${selectedId === m.id ? ' selected' : ''}${m.temp_address ? ' temp-mail' : ''}`}
-          style={{ '--account-color': m.temp_address?.color || accountColors.get(m.account_id) }}
+          style={{
+            '--account-color': m.temp_address
+              ? tempColors?.get(m.temp_address.address) || m.temp_address.color
+              : accountColors.get(m.account_id),
+          }}
           onClick={() => onSelect(m.id)}
         >
           <div className="message-list-item-top">

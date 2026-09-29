@@ -16,6 +16,7 @@ function MainPane({
   selectedMessageId,
   selectedMessage,
   selectedAccount,
+  tempColors,
   messageLoading,
   messageError,
   selectedNote,
@@ -95,6 +96,7 @@ function MainPane({
         back={back}
         message={selectedMessage}
         account={selectedAccount}
+        tempColors={tempColors}
         loading={messageLoading}
         error={messageError}
         now={now}

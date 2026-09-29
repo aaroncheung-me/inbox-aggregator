@@ -540,8 +540,8 @@ function App({ userEmail, onSignOut }) {
     }
   }
 
-  // Like account colors: recolors at once, saves once the picker stops
-  // changing, then reloads the list so its emails' stripes match.
+  // Like account colors: recolors at once (the list and open email read the
+  // color from here), and saves once the picker stops changing.
   const tempColorTimers = useRef(new Map());
   function handleChangeTempColor(id, color) {
     setTempLocally(id, { color });
@@ -550,7 +550,6 @@ function App({ userEmail, onSignOut }) {
       tempColorTimers.current.delete(id);
       try {
         await updateTempAddress(id, { color });
-        await reloadMessages();
       } catch (err) {
         console.error(err);
         setNotice({ type: 'error', text: "Couldn't save that color, try again" });
@@ -1022,6 +1021,7 @@ function App({ userEmail, onSignOut }) {
         selectedMessageId={selectedMessageId}
         selectedMessage={selectedMessage}
         selectedAccount={selectedAccount}
+        tempColors={new Map((tempAddresses?.addresses || []).map(a => [a.address, a.color]))}
         messageLoading={messageLoading}
         messageError={messageError}
         chatHistory={chatHistory}

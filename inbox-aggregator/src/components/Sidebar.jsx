@@ -68,6 +68,7 @@ function Sidebar({
   const isPhone = useMediaQuery(PHONE_LAYOUT);
 
   const accountColors = new Map(accounts.map(a => [a.id, a.color]));
+  const tempColors = new Map((tempAddresses?.temp?.addresses || []).map(a => [a.address, a.color]));
 
   const noticeBanner = notice && (
     <div className={`notice notice-${notice.type}`} role="status">
@@ -95,6 +96,7 @@ function Sidebar({
       <MessageList
         messages={search.results}
         accountColors={accountColors}
+        tempColors={tempColors}
         selectedId={selectedId}
         onSelect={onSelect}
         hasMore={search.hasMore}
@@ -112,13 +114,14 @@ function Sidebar({
       {folder === 'inbox' && pinned.length > 0 && (
         <>
           <div className="list-group-label">Pinned</div>
-          <MessageList messages={pinned} accountColors={accountColors} selectedId={selectedId} onSelect={onSelect} hasMore={false} />
+          <MessageList messages={pinned} accountColors={accountColors} tempColors={tempColors} selectedId={selectedId} onSelect={onSelect} hasMore={false} />
           <div className="list-group-label">Received</div>
         </>
       )}
       <MessageList
         messages={messages}
         accountColors={accountColors}
+        tempColors={tempColors}
         selectedId={selectedId}
         onSelect={onSelect}
         hasMore={hasMore}

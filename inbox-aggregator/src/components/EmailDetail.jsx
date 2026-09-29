@@ -9,7 +9,8 @@ import Linkify from './Linkify';
 // Reply plus a More menu for the rest, since the full row doesn't fit.
 // back: the bar's back button(s), from MainPane.
 // onReply(kind): kind is 'reply', 'replyAll' or 'forward'. onTogglePin pins or unpins it.
-function EmailDetail({ back, message, account, loading, error, now, allNotes, onOpenNote, onCreateNote, onAiCreateNote, onReply, onTogglePin }) {
+// tempColors: address -> color of the temp addresses as the app has them now.
+function EmailDetail({ back, message, account, tempColors, loading, error, now, allNotes, onOpenNote, onCreateNote, onAiCreateNote, onReply, onTogglePin }) {
   const [writingNote, setWritingNote] = useState(false);
   const ready = Boolean(message && !loading && !error);
 
@@ -32,7 +33,11 @@ function EmailDetail({ back, message, account, loading, error, now, allNotes, on
         />
         {message.temp_address ? (
           <div className="received-by">
-            <span className="temp-dot" style={{ borderColor: message.temp_address.color || undefined }} aria-hidden="true" />
+            <span
+              className="temp-dot"
+              style={{ borderColor: tempColors?.get(message.temp_address.address) || message.temp_address.color || undefined }}
+              aria-hidden="true"
+            />
             Temp: {message.temp_address.address}
           </div>
         ) : account && (
