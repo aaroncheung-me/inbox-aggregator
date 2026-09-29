@@ -36,6 +36,7 @@ import './styles/app.scss';
 const PAGE_SIZE = 25;
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const REFRESH_ON_RETURN_MS = 30 * 1000;
 
 // The least recently synced account decides the "synced Xm ago" label, so it
 // never looks fresher than it is. Any never-synced account means "never synced".
@@ -72,15 +73,22 @@ function readLaunchAction() {
 }
 
 const launchAction = readLaunchAction();
+// The freshly fetched first page on top, then the rest of what's already listed
+// (emails pushed down by new ones, and any pages added with "Load more").
+function mergeFirstPage(listed, page) {
+  const fresh = new Set(page.messages.map(m => m.id));
+  return [...page.messages, ...listed.filter(m => !fresh.has(m.id))];
+}
+
 // StrictMode runs effects twice in development; this keeps the startup sync to one run
 let startupSyncStarted = false;
 // Opening the app syncs if the least recently synced account is older than this.
 // (On a free host the server sleeps, so nothing syncs in the background.)
 const SYNC_ON_OPEN_AFTER_MS = 5 * 60 * 1000;
 
-// Syncs every account, then fetches what the sidebar needs to reflect it.
-// `page` is null when nothing new arrived, so the list (and any "load more"
-// progress) is left alone.
+// Syncs every account, then fetches what the sidebar needs to reflect it. The
+// first page is fetched even when this sync found nothing: the background sync
+// may already have saved mail the list doesn't show yet.
 // folder: the list on screen, 'inbox' or 'sent'
 async function syncAndReload(folder) {
   const result = await syncAll();
@@ -89,7 +97,7 @@ async function syncAndReload(folder) {
   }
   const [accounts, page] = await Promise.all([
     getAccounts(),
-    result.saved > 0 ? getMessages({ limit: PAGE_SIZE, offset: 0, folder }) : null,
+    getMessages({ limit: PAGE_SIZE, offset: 0, folder }),
   ]);
   return { accounts, page };
 }
@@ -206,12 +214,10 @@ function App({ userEmail, onSignOut }) {
       .then(needed => {
         if (!needed) return;
         setSyncing(true);
+        const version = ++listVersion.current;
         return syncAndReload(listFolder.current).then(({ accounts, page }) => {
           setAccounts(accounts);
-          if (page) {
-            setMessages(page.messages);
-            setTotal(page.total);
-          }
+          showNewMail(page, version);
         });
       })
       .catch(err => console.error(err))
@@ -237,6 +243,49 @@ function App({ userEmail, onSignOut }) {
     setTotal(page.total);
     return true;
   }
+
+  // After a sync: adds newly arrived mail to the top without losing "Load more" progress.
+  function showNewMail(page, version) {
+    if (version !== listVersion.current) return;
+    setMessages(prev => mergeFirstPage(prev, page));
+    setTotal(page.total);
+  }
+
+  // Coming back to the app (its tab or window, or reopening the phone app)
+  // picks up what the background sync saved meanwhile, and notes changed on
+  // another device. Only reads the database, at most once per REFRESH_ON_RETURN_MS.
+  const lastRefresh = useRef(Date.now());
+  const refreshOnReturn = useRef(null);
+  useEffect(() => {
+    refreshOnReturn.current = async () => {
+      if (syncing || Date.now() - lastRefresh.current < REFRESH_ON_RETURN_MS) return;
+      lastRefresh.current = Date.now();
+      const version = listVersion.current;
+      try {
+        const [page, freshAccounts, freshNotes] = await Promise.all([
+          getMessages({ limit: PAGE_SIZE, offset: 0, folder: listFolder.current }),
+          getAccounts(),
+          getNotes(),
+        ]);
+        showNewMail(page, version);
+        setAccounts(freshAccounts);
+        setNotes(freshNotes);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+  });
+  useEffect(() => {
+    const handleReturn = () => {
+      if (document.visibilityState === 'visible') refreshOnReturn.current?.();
+    };
+    document.addEventListener('visibilitychange', handleReturn);
+    window.addEventListener('focus', handleReturn);
+    return () => {
+      document.removeEventListener('visibilitychange', handleReturn);
+      window.removeEventListener('focus', handleReturn);
+    };
+  }, []);
 
   async function reloadMessages() {
     const version = ++listVersion.current;
@@ -273,8 +322,7 @@ function App({ userEmail, onSignOut }) {
       const version = ++listVersion.current;
       const { accounts, page } = await syncAndReload(listFolder.current);
       setAccounts(accounts);
-      // refresh from the top so newly synced messages appear
-      if (page) showFirstPage(page, version);
+      showNewMail(page, version);
     } catch (err) {
       console.error(err);
     } finally {
