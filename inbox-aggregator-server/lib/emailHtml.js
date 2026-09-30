@@ -1,5 +1,4 @@
-const supabase = require('./supabase');
-const { getAccount, getCredentials } = require('./accounts');
+const { getMessageAccess } = require('./accounts');
 const { connectorFor } = require('../connectors');
 const { normalizeCid } = require('./text');
 
@@ -24,19 +23,12 @@ function inlineImages(html, parts) {
 // inlinePartIds are the attachments shown inside it), or null if the message
 // doesn't exist or isn't this user's.
 async function getEmailHtml(userId, messageId) {
-  const { data: message, error } = await supabase
-    .from('messages')
-    .select('account_id, external_id')
-    .eq('id', messageId)
-    .maybeSingle();
-  if (error) throw error;
+  const access = await getMessageAccess(userId, messageId);
+  if (!access) return null;
 
-  const account = message && await getAccount(userId, message.account_id);
-  if (!account) return null;
-
-  const { html, inlineParts } = await connectorFor(account.provider).getHtml({
-    credentials: await getCredentials(account),
-    messageExternalId: message.external_id,
+  const { html, inlineParts } = await connectorFor(access.provider).getHtml({
+    credentials: access.credentials,
+    messageExternalId: access.externalId,
     maxHtmlBytes: MAX_HTML_BYTES,
     maxInlineBytes: MAX_INLINE_BYTES,
   });

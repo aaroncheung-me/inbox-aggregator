@@ -1,7 +1,7 @@
 // The email list, search, one email (with its formatted version and attachments), and pins.
 const express = require('express');
 const supabase = require('../lib/supabase');
-const { listAccounts, getAccount, getCredentials } = require('../lib/accounts');
+const { listAccounts, getMessageAccess } = require('../lib/accounts');
 const { keywordSearch, parseSearchQuery } = require('../lib/search');
 const { getEmailHtml } = require('../lib/emailHtml');
 const { downloadAttachmentFile } = require('../lib/attachments');
@@ -127,19 +127,24 @@ router.get('/messages/:messageId', async (req, res) => {
     .from('messages')
     .select(`
       id, account_id, thread_id, sender, to_recipients, cc_recipients, subject, body, snippet,
-      received_at, labels, is_read, pinned_at, attachments(id, external_id, filename, mime_type, size_bytes)
+      received_at, labels, is_read, pinned_at, attachments(id, external_id, filename, mime_type, size_bytes),
+      accounts!inner(user_id)
     `)
     .eq('id', req.params.messageId)
+    .eq('accounts.user_id', req.userId) // only the user's own email
     .maybeSingle();
 
   if (error) throw error;
+  if (!data) return res.status(404).send('Message not found');
+  const message = { ...data };
+  delete message.accounts;
 
-  const accountIds = await userAccountIds(req.userId);
-  if (!data || !accountIds.includes(data.account_id)) return res.status(404).send('Message not found');
-
-  // the notes stuck to this email, and which temp address it came to, if any
-  const [marked] = await markTempMail(req.userId, [data]);
-  res.json({ ...marked, notes: await notesForMessage(req.userId, data.id) });
+  // which temp address it came to, if any, and the notes stuck to it, looked up side by side
+  const [[marked], notes] = await Promise.all([
+    markTempMail(req.userId, [message]),
+    notesForMessage(req.userId, message.id),
+  ]);
+  res.json({ ...marked, notes });
 });
 
 // Body: { pinned: boolean }. Pins live only in the app. Returns { pinned_at }.
@@ -168,20 +173,13 @@ router.patch('/messages/:messageId', async (req, res) => {
 // What replying needs that isn't stored: { replyTo } (the address replies
 // should go to, when the sender asked for a different one), or null when unknown.
 router.get('/messages/:messageId/reply-info', async (req, res) => {
-  const { data, error } = await supabase
-    .from('messages')
-    .select('account_id, external_id')
-    .eq('id', req.params.messageId)
-    .maybeSingle();
-  if (error) throw error;
-
-  const account = data && await getAccount(req.userId, data.account_id);
-  if (!account) return res.status(404).send('Message not found');
+  const access = await getMessageAccess(req.userId, req.params.messageId);
+  if (!access) return res.status(404).send('Message not found');
 
   try {
-    const headers = await connectorFor(account.provider).getReplyHeaders({
-      credentials: await getCredentials(account),
-      messageExternalId: data.external_id,
+    const headers = await connectorFor(access.provider).getReplyHeaders({
+      credentials: access.credentials,
+      messageExternalId: access.externalId,
     });
     res.json({ replyTo: headers.replyTo });
   } catch (err) {

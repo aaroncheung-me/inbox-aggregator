@@ -1,5 +1,25 @@
 import { senderName, shortDate } from '../../format';
 import { splitAddresses } from '../compose/compose';
+import { preloadEmailHtml } from './useEmailHtml';
+
+// How long the mouse rests on an email before its formatted version starts
+// loading, so sweeping across the list doesn't load every email passed over.
+const HOVER_PRELOAD_MS = 120;
+let hoverTimer = null;
+
+// Mouse: preload after a short rest. Touch or pen: preload on touching down,
+// a moment before the tap opens it.
+function preloadHandlers(messageId) {
+  return {
+    onPointerEnter: e => {
+      if (e.pointerType !== 'mouse') return;
+      clearTimeout(hoverTimer);
+      hoverTimer = setTimeout(() => preloadEmailHtml(messageId), HOVER_PRELOAD_MS);
+    },
+    onPointerLeave: () => clearTimeout(hoverTimer),
+    onPointerDown: () => preloadEmailHtml(messageId),
+  };
+}
 
 // '"Ann" <a@x.com>, b@y.com' -> 'To: Ann +1'
 function recipientsLabel(recipients) {
@@ -25,6 +45,7 @@ function MessageList({ messages, accountColors, tempColors, selectedId, onSelect
               : accountColors.get(m.account_id),
           }}
           onClick={() => onSelect(m.id)}
+          {...preloadHandlers(m.id)}
         >
           <div className="message-list-item-top">
             <span className="sender">{showRecipients ? recipientsLabel(m.to_recipients) : senderName(m.sender)}</span>

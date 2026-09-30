@@ -40,6 +40,51 @@ async function withClient(credentials, fn) {
   }
 }
 
+// For opening emails one after another: logging in takes about half a second,
+// so one connection per mailbox is kept open and reused, and logged out once
+// it has been unused this long. (Syncing still uses its own connections.)
+const KEPT_IDLE_MS = 45 * 1000;
+const keptClients = new Map(); // "user@host:port" -> { client, ready, active, timer }
+
+async function withKeptClient(credentials, fn, isRetry = false) {
+  const key = `${credentials.user}@${credentials.host}:${credentials.port}`;
+  let kept = keptClients.get(key);
+  if (!kept || !kept.client.usable) {
+    const client = createClient(credentials);
+    kept = { client, ready: client.connect(), active: 0, timer: null };
+    keptClients.set(key, kept);
+    const entry = kept;
+    // a dropped connection is forgotten, and the next email opens a new one;
+    // the error listener also keeps a failure on an idle connection from crashing the server
+    client.on('error', err => console.error(`Kept IMAP connection to ${credentials.host} failed:`, err.message));
+    client.on('close', () => { if (keptClients.get(key) === entry) keptClients.delete(key); });
+    kept.ready.catch(() => { if (keptClients.get(key) === entry) keptClients.delete(key); });
+  }
+
+  const entry = kept;
+  await entry.ready;
+  entry.active++;
+  clearTimeout(entry.timer);
+  try {
+    return await fn(entry.client);
+  } catch (err) {
+    // the connection died while it sat unused: try once more on a new one
+    if (!entry.client.usable && !isRetry) {
+      if (keptClients.get(key) === entry) keptClients.delete(key);
+      return withKeptClient(credentials, fn, true);
+    }
+    throw err;
+  } finally {
+    entry.active--;
+    if (entry.active === 0) {
+      entry.timer = setTimeout(() => {
+        if (keptClients.get(key) === entry) keptClients.delete(key);
+        entry.client.logout().catch(() => entry.client.close());
+      }, KEPT_IDLE_MS);
+    }
+  }
+}
+
 // Turns connection failures into messages the connect form can show.
 function explainConnectError(err, { host, port }) {
   if (err.authenticationFailed) return new UserError('The server rejected that email/password');
@@ -244,11 +289,12 @@ function parseExternalId(messageExternalId) {
   return { path: parts.join(':'), uidValidity, uid };
 }
 
-// Opens the folder holding one stored message and runs fn(client, uid).
+// Opens the folder holding one stored message and runs fn(client, uid), on the
+// kept connection, since these run as emails are opened.
 async function withStoredMessage(credentials, messageExternalId, fn) {
   const { path, uidValidity, uid } = parseExternalId(messageExternalId);
 
-  return withClient(credentials, async client => {
+  return withKeptClient(credentials, async client => {
     const lock = await client.getMailboxLock(path);
     try {
       if (String(client.mailbox.uidValidity) !== uidValidity) {

@@ -99,6 +99,23 @@ async function getAccount(userId, accountId) {
   return data;
 }
 
+// What reaching a stored email at its provider needs, in one lookup (opening
+// an email is the hot path): { externalId, provider, credentials }, or null if
+// the email doesn't exist or isn't this user's.
+async function getMessageAccess(userId, messageId) {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('external_id, accounts!inner(id, user_id, provider, credentials)')
+    .eq('id', messageId)
+    .eq('accounts.user_id', userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+  if (!data.accounts.credentials) throw new Error(`Account ${data.accounts.id} has no stored credentials, reconnect it`);
+  return { externalId: data.external_id, provider: data.accounts.provider, credentials: decryptJson(data.accounts.credentials) };
+}
+
 async function getCredentials(account) {
   const { data, error } = await supabase
     .from('accounts')
@@ -128,6 +145,7 @@ module.exports = {
   listAllAccounts,
   getAccount,
   getCredentials,
+  getMessageAccess,
   saveSyncState,
   saveConnectedAccount,
   updateAccountSettings,

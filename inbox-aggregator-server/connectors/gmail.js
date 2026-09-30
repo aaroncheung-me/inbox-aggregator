@@ -26,10 +26,17 @@ function oauthClient() {
   return new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, REDIRECT_URI);
 }
 
+// One client per account, kept, so its access token (good for an hour, renewed
+// by the client when it runs out) is reused instead of fetched for every call.
+const clients = new Map(); // refresh token -> Gmail API client
+
 function gmailClient(credentials) {
-  const client = oauthClient();
-  client.setCredentials({ refresh_token: credentials.refresh_token });
-  return google.gmail({ version: 'v1', auth: client });
+  if (!clients.has(credentials.refresh_token)) {
+    const client = oauthClient();
+    client.setCredentials({ refresh_token: credentials.refresh_token });
+    clients.set(credentials.refresh_token, google.gmail({ version: 'v1', auth: client }));
+  }
+  return clients.get(credentials.refresh_token);
 }
 
 // `state` comes back untouched on the callback (see createConnectState).
