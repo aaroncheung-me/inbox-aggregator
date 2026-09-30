@@ -1,0 +1,228 @@
+// The ask box and the assistant's answers.
+@use '../../styles/tokens' as *;
+
+// ---------- ask bar (sticky, top of sidebar) ----------
+.ask-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+  padding: $space-3 $space-4 $space-4;
+  border-bottom: 1px solid $border;
+}
+
+.ask-bar-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ask-bar-row {
+  display: flex;
+  gap: $space-2;
+
+  input {
+    min-width: 0;
+    flex: 1;
+    font-family: inherit;
+    font-size: 14px;
+    padding: $space-2 $space-3;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $bg;
+    color: $text-primary;
+
+    &:focus {
+      outline: none;
+      border-color: $accent;
+    }
+  }
+}
+
+// ---------- chat panel ----------
+.chat-panel {
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.chat-empty {
+  color: $text-secondary;
+
+  .chat-example {
+    font-style: italic;
+    margin: $space-2 0 0;
+  }
+
+  .chat-tip {
+    margin-top: $space-6;
+    font-size: 13px;
+  }
+}
+
+.chat-exchange {
+  margin-bottom: $space-8;
+}
+
+.chat-question {
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: $space-2;
+  color: $accent;
+}
+
+.chat-answer {
+  line-height: 1.6;
+  margin-bottom: $space-3;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+// numbered citation inside an answer; opens the email
+.citation {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin: 0 2px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 9px;
+  background: $accent-soft;
+  color: $accent;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: text-top;
+
+  &:hover {
+    background: $accent;
+    color: #fff;
+  }
+}
+
+.chat-sources {
+  margin: 0 0 $space-3;
+  padding-left: $space-6;
+  font-size: 13px;
+
+  li {
+    margin-bottom: $space-1;
+    color: $text-secondary;
+  }
+}
+
+.source-link {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: $space-1 $space-2;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  text-align: left;
+  color: $text-primary;
+
+  &:hover {
+    background: $accent-soft;
+  }
+}
+
+.source-subject {
+  font-weight: 500;
+}
+
+.source-meta {
+  font-family: $font-mono;
+  font-size: 11px;
+  color: $text-secondary;
+}
+
+// notes the assistant made in an answer, with Open and Undo
+.created-notes {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+  margin-bottom: $space-3;
+}
+
+.created-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: $space-2;
+  padding: $space-2 $space-3;
+  border: 1px solid #EADC8A; // same edge as sticky notes
+  border-radius: 6px;
+  background: #FFF4B8;
+  font-size: 13px;
+
+  &.undone {
+    border-color: $border;
+    background: $surface;
+    color: $text-secondary;
+
+    .created-note-title {
+      text-decoration: line-through;
+    }
+  }
+}
+
+.created-note-label {
+  font-weight: 600;
+}
+
+.created-note-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.created-note-actions {
+  display: flex;
+  gap: $space-1;
+}
+
+.chat-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: $space-3;
+  font-size: 12px;
+  color: $text-secondary;
+}
+
+// the searches and lookups of an answer still being worked out
+.chat-live-steps {
+  margin: 0 0 $space-2;
+  padding-left: $space-6;
+  font-size: 12px;
+  line-height: 1.6;
+  color: $text-secondary;
+}
+
+.chat-steps {
+  summary {
+    cursor: pointer;
+  }
+
+  ol {
+    margin: $space-2 0 0;
+    padding-left: $space-6;
+    line-height: 1.6;
+  }
+}
+
+.chat-cost {
+  margin-left: auto;
+  font-family: $font-mono;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.chat-thinking {
+  color: $text-secondary;
+  font-style: italic;
+}
+
+.chat-error {
+  color: $danger;
+}

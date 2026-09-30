@@ -1,0 +1,212 @@
+// The page itself: reset, the two-pane layout, the top bar (PaneBar), menus
+// (ActionMenu) and buttons.
+@use './tokens' as *;
+
+// ---------- reset ----------
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: $font-ui;
+  color: $text-primary;
+  background: $bg;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+// ---------- layout ----------
+.app {
+  display: flex;
+  height: 100vh;
+  height: 100dvh; // the visible height on phones, excluding browser bars; 100vh is the fallback
+  overflow: hidden;
+  // keeps content clear of the iPhone notch and home bar (0 everywhere else)
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+// shown only in the phone layout (see the media query at the end)
+.phone-only {
+  display: none;
+}
+
+.sidebar {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: $surface;
+  border-right: 1px solid $border;
+}
+
+.sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+// The main pane: a top bar that stays put (PaneBar) over a scrolling body.
+// Both pad their sides so their contents share one centered column, at most
+// 680px wide, while the scrollbar stays at the pane's edge.
+
+.main-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+// phone only: the list screen's ask box and tabs, kept above emails, notes and answers
+.phone-header {
+  flex-shrink: 0;
+  background: $surface;
+}
+
+.pane-bar {
+  flex-shrink: 0;
+  padding: $space-2 max(#{$space-6}, calc((100% - #{$pane-column}) / 2));
+  border-bottom: 1px solid $border;
+  background: $surface;
+}
+
+.pane-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  min-height: 32px;
+}
+
+.pane-back {
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 13px;
+  color: $accent;
+  white-space: nowrap;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.pane-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+// the page's actions, at the right end of the bar
+.pane-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex-shrink: 0;
+}
+
+.pane-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: $space-6 max(#{$space-6}, calc((100% - #{$pane-column}) / 2)) $space-8;
+}
+
+// a button opening a short list of actions ("More", "+ Add")
+.action-menu {
+  position: relative;
+}
+
+// placed against the screen by ActionMenu (top/bottom and left/right set inline)
+.action-menu-options {
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: $space-1 0;
+  border: 1px solid $border;
+  border-radius: 6px;
+  background: $surface;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+
+  button {
+    padding: $space-2 $space-3;
+    border: none;
+    background: none;
+    text-align: left;
+    font-size: 13px;
+    color: $text-primary;
+
+    &:hover {
+      background: $accent-soft;
+    }
+
+    &.danger {
+      color: $danger;
+    }
+  }
+
+}
+
+// ---------- buttons ----------
+.btn {
+  background: $accent;
+  color: #fff;
+  border: none;
+  padding: $space-2 $space-3;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: $accent-hover;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid $border;
+  color: $text-primary;
+
+  &:hover:not(:disabled) {
+    background: $accent-soft;
+  }
+}
+
+.btn-danger {
+  background: $danger;
+
+  &:hover:not(:disabled) {
+    background: #93341A; // $danger, darker
+  }
+}
+
+.btn-small {
+  padding: $space-1 $space-2;
+  font-size: 12px;
+}
+
+.load-more {
+  display: block;
+  width: calc(100% - #{$space-4 * 2});
+  margin: $space-3 $space-4;
+}

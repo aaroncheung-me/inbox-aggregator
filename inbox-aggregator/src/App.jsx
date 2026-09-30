@@ -28,16 +28,16 @@ import {
   cancelSend,
 } from './api';
 import { PHONE_LAYOUT } from './layout';
-import { dueReminderCount } from './notes';
-import { newDraft, draftFromMessage, fullBody, draftHasContent, DRAFT_TITLES } from './compose';
+import { dueReminderCount } from './features/notes/notes';
+import { newDraft, draftFromMessage, fullBody, draftHasContent, DRAFT_TITLES } from './features/compose/compose';
 import { useNow } from './hooks/useNow';
-import Sidebar from './components/Sidebar';
-import MainPane from './components/MainPane';
-import CreditsBanner from './components/CreditsBanner';
-import DraftAssistant from './components/DraftAssistant';
-import AskBar from './components/AskBar';
-import SidebarTabs from './components/SidebarTabs';
-import SendingBar from './components/SendingBar';
+import Sidebar from './shell/Sidebar';
+import MainPane from './shell/MainPane';
+import CreditsBanner from './shell/CreditsBanner';
+import DraftAssistant from './features/compose/DraftAssistant';
+import AskBar from './features/assistant/AskBar';
+import SidebarTabs from './shell/SidebarTabs';
+import SendingBar from './features/compose/SendingBar';
 import './styles/app.scss';
 
 const PAGE_SIZE = 25;

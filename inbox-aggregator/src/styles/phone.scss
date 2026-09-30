@@ -1,0 +1,264 @@
+// Phone layout. Loaded last so it overrides the desktop rules above it.
+@use './tokens' as *;
+
+// ---------- phone layout ----------
+// Keep the width in sync with PHONE_LAYOUT in src/layout.js.
+@media (max-width: 767px) {
+  .phone-only {
+    display: block;
+  }
+
+  // "Accounts (3) ... Sync now", pinned below the list; its panel opens above it
+  .phone-bar {
+    flex-shrink: 0;
+    border-top: 1px solid $border;
+    background: $surface;
+
+    // near the bottom of the screen, so these open upward
+    .add-account-menu,
+    .color-picker-popover {
+      top: auto;
+      bottom: calc(100% + #{$space-1});
+    }
+  }
+
+  .phone-bar-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    min-height: 48px;
+    padding: 0 $space-4;
+  }
+
+  .phone-bar-panel {
+    padding-top: $space-2;
+    border-bottom: 1px solid $border;
+    background: $bg;
+
+    // a long account list scrolls instead of pushing the inbox off screen
+    .accounts-list {
+      max-height: 40vh;
+      overflow-y: auto;
+      padding-bottom: $space-1;
+    }
+  }
+
+  .phone-bar-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: $space-2;
+    min-height: 48px;
+    padding: 0 $space-4;
+    border-top: 1px solid $border;
+    font-size: 13px;
+    color: $text-secondary;
+  }
+
+  // one screen at a time: the list, or the email/chat
+  .sidebar {
+    width: 100%;
+    border-right: none;
+  }
+
+  .app.phone-shows-list .main-pane {
+    display: none;
+  }
+
+  .app.phone-shows-main .sidebar {
+    display: none;
+  }
+
+  .pane-bar {
+    padding: $space-1 $space-4;
+  }
+
+  .pane-bar-inner {
+    min-height: 44px;
+  }
+
+  .pane-back {
+    font-size: 15px;
+  }
+
+  .pane-body {
+    padding: $space-4 $space-4 $space-6;
+  }
+
+  .desktop-only {
+    display: none !important;
+  }
+
+  .phone-open-chat {
+    width: 100%;
+    min-height: 44px;
+    padding: $space-2 $space-4;
+    border: none;
+    border-bottom: 1px solid $border;
+    background: $accent-soft;
+    text-align: left;
+    font-size: 14px;
+    color: $accent;
+  }
+
+  // iOS zooms the page when focusing a field with text under 16px
+  .ask-bar-row input,
+  .temp-form input,
+  .temp-form select,
+  .compose-row input,
+  .compose-row select,
+  .compose-body,
+  .field input,
+  .note-capture textarea,
+  .note-body,
+  .picker-row input,
+  .sticky-note-form textarea {
+    font-size: 16px;
+  }
+
+  .sidebar-tabs button {
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  .note-list-main {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+
+  // wide enough to grab with a thumb
+  .drag-handle {
+    width: 40px;
+  }
+
+  .note-title {
+    font-size: 14px;
+  }
+
+  .addon-remove {
+    width: 28px;
+    height: 28px;
+  }
+
+  // not enough width for subject and sender side by side
+  .linked-main {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 44px;
+  }
+
+  .linked-title {
+    width: 100%;
+  }
+
+  .add-addon-options button {
+    min-height: 40px;
+  }
+
+  .picker-results button {
+    min-height: 44px;
+  }
+
+  // bigger tap targets (Apple suggests at least 44px)
+  .btn {
+    min-height: 40px;
+    font-size: 14px;
+  }
+
+  .btn-small {
+    min-height: 32px;
+    padding: $space-1 $space-3;
+    font-size: 13px;
+  }
+
+  .mode-toggle button {
+    padding: 6px 14px;
+    font-size: 13px;
+  }
+
+  .accounts-header {
+    min-height: 44px;
+  }
+
+  .accounts-heading {
+    font-size: 13px;
+  }
+
+  .account-row {
+    min-height: 44px;
+    padding: $space-1 $space-4;
+
+    input[type='checkbox'] {
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  .account-name {
+    font-size: 14px;
+  }
+
+  .account-dot-button {
+    width: 22px;
+    height: 22px;
+  }
+
+  .temp-row-meta {
+    padding-left: calc(#{$space-4} + 18px + 22px + #{$space-2 * 2});
+  }
+
+  .icon-button {
+    min-width: 36px;
+    min-height: 32px;
+    font-size: 16px;
+  }
+
+  .add-account-option {
+    min-height: 44px;
+  }
+
+  .message-list-item {
+    padding: 14px $space-4;
+  }
+
+  .sender,
+  .subject {
+    font-size: 14px;
+  }
+
+  .snippet {
+    font-size: 13px;
+  }
+
+  .email-detail {
+    .subject {
+      font-size: 20px;
+    }
+
+    .body {
+      font-size: 15px;
+    }
+  }
+
+  .chat-question {
+    font-size: 16px;
+  }
+
+  .chat-answer {
+    font-size: 15px;
+  }
+
+  .citation {
+    min-width: 22px;
+    height: 22px;
+    font-size: 12px;
+  }
+
+  .source-link {
+    min-height: 44px;
+  }
+
+  .login-screen {
+    padding: env(safe-area-inset-top) $space-4 env(safe-area-inset-bottom);
+  }
+}

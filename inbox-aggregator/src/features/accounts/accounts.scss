@@ -1,0 +1,423 @@
+// Accounts and temp addresses: the panel, color picker, add-account menu and
+// the IMAP connect dialog.
+@use '../../styles/tokens' as *;
+
+// ---------- accounts panel ----------
+.accounts-panel {
+  border-bottom: 1px solid $border;
+  font-size: 12px;
+}
+
+.accounts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: $space-2 $space-4;
+}
+
+.accounts-heading {
+  display: flex;
+  align-items: center;
+  gap: $space-1;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.accounts-chevron {
+  width: 12px;
+  color: $text-secondary;
+}
+
+.accounts-summary {
+  font-weight: 400;
+  color: $text-secondary;
+}
+
+.accounts-empty {
+  margin: 0;
+  padding: 0 $space-4 $space-3;
+  color: $text-secondary;
+}
+
+.accounts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 $space-2;
+}
+
+// ---------- temp addresses (rows under the accounts) ----------
+// Dashed means temporary: the dot here, and the stripe on the emails it received.
+.temp-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border: 2px dashed $text-secondary;
+  border-radius: 50%;
+}
+
+// as a color picker button, it takes the account dot's size (bigger on a phone)
+.account-dot-button.temp-dot {
+  border: 2px dashed $text-secondary;
+  background: transparent;
+}
+
+.temp-addresses {
+  display: flex;
+  flex-direction: column;
+}
+
+.temp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 $space-2;
+}
+
+// the top line is an .account-row (same padding, checkbox and dot sizes)
+.temp-row {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: $space-1;
+
+  &:hover {
+    background: $accent-soft;
+  }
+
+  .account-row:hover {
+    background: none;
+  }
+}
+
+
+// unchecked: its emails are left out of the inbox, like an unchecked account
+.temp-row.hidden-account .temp-address {
+  color: $text-secondary;
+  text-decoration: line-through;
+}
+
+.temp-address {
+  font-family: $font-mono;
+}
+
+// lines up under the address: row padding, checkbox, dot, and the two gaps
+.temp-row-meta {
+  padding-left: calc(#{$space-4} + 13px + 14px + #{$space-2 * 2});
+  padding-right: $space-4;
+  color: $text-secondary;
+}
+
+// a symbol button (copy, options): square, so a row of them stays compact
+.icon-button {
+  min-width: 28px;
+  padding-left: $space-1;
+  padding-right: $space-1;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.temp-confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $space-1 $space-2;
+  padding-top: $space-1;
+}
+
+.temp-confirm {
+  color: $danger;
+}
+
+.temp-form {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+  margin: 0 $space-4 $space-2;
+  padding: $space-2 $space-3;
+  border: 1px solid $border;
+  border-radius: 6px;
+  background: $bg;
+
+  input,
+  select {
+    font-family: inherit;
+    font-size: 13px;
+    padding: $space-1 $space-2;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $surface;
+    color: $text-primary;
+  }
+}
+
+.temp-form-title {
+  font-weight: 600;
+}
+
+.temp-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $space-2;
+}
+
+.temp-hint {
+  margin: 0;
+  color: $text-secondary;
+}
+
+.temp-error {
+  margin: 0 $space-4 $space-2;
+}
+
+// on emails that came to a temp address
+.temp-chip {
+  display: inline-block;
+  margin-right: $space-1;
+  padding: 0 5px;
+  border: 1px solid $border;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: $text-secondary;
+  vertical-align: 1px;
+}
+
+.temp-notice {
+  margin-bottom: $space-3;
+  padding: $space-2 $space-3;
+  border-radius: 6px;
+  background: $accent-soft;
+  font-size: 13px;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-1 $space-4;
+
+  &:hover {
+    background: $accent-soft;
+  }
+
+  input[type='checkbox'] {
+    margin: 0;
+    accent-color: $accent;
+    cursor: pointer;
+  }
+
+  &.hidden-account .account-name {
+    color: $text-secondary;
+    text-decoration: line-through;
+  }
+}
+
+.account-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.account-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+// ---------- account color picker ----------
+.color-picker {
+  position: relative;
+  display: flex;
+}
+
+.account-dot-button {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+
+  &:hover,
+  &:focus-visible {
+    outline: 2px solid $accent;
+    outline-offset: 1px;
+  }
+}
+
+.color-picker-popover {
+  position: absolute;
+  top: calc(100% + #{$space-1});
+  left: -$space-2;
+  z-index: 10;
+  padding: $space-2;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.color-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 24px);
+  gap: $space-2;
+}
+
+.color-swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 50%;
+
+  &:hover,
+  &:focus-visible {
+    outline: 2px solid $border;
+    outline-offset: 1px;
+  }
+
+  &.selected {
+    outline: 2px solid $accent;
+    outline-offset: 1px;
+  }
+}
+
+.color-custom {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  margin-top: $space-2;
+  padding-top: $space-2;
+  border-top: 1px solid $border;
+  font-size: 12px;
+  color: $text-secondary;
+  cursor: pointer;
+  white-space: nowrap;
+
+  input[type='color'] {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+  }
+}
+
+// ---------- add account menu ----------
+.add-account {
+  position: relative;
+}
+
+.add-account-menu {
+  position: absolute;
+  top: calc(100% + #{$space-1});
+  right: 0;
+  z-index: 10;
+  min-width: 200px;
+  padding: $space-1;
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.add-account-option {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: $space-2 $space-3;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  text-align: left;
+  text-decoration: none;
+  color: $text-primary;
+
+  &:hover,
+  &:focus-visible {
+    background: $accent-soft;
+    outline: none;
+  }
+}
+
+.add-account-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.add-account-hint {
+  font-size: 11px;
+  color: $text-secondary;
+}
+
+.add-account-error {
+  margin: $space-1 $space-3 $space-2;
+  font-size: 11px;
+  color: $danger;
+}
+
+// ---------- connect dialog ----------
+.connect-dialog {
+  width: min(420px, calc(100vw - #{$space-8}));
+  padding: $space-6;
+  border: 1px solid $border;
+  border-radius: 8px;
+  background: $surface;
+  color: $text-primary;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+
+  &::backdrop {
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  h2 {
+    margin: 0 0 $space-1;
+    font-size: 18px;
+  }
+}
+
+.dialog-hint {
+  margin: 0 0 $space-4;
+  font-size: 12px;
+  line-height: 1.5;
+  color: $text-secondary;
+}
+
+.server-settings {
+  margin-bottom: $space-3;
+  font-size: 12px;
+
+  summary {
+    cursor: pointer;
+    color: $text-secondary;
+    margin-bottom: $space-2;
+  }
+}
+
+.server-settings-fields {
+  display: flex;
+  gap: $space-2;
+
+  .field {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .field-port {
+    flex: 0 0 80px;
+  }
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: $space-2;
+}

@@ -1,0 +1,129 @@
+// The frame around the features: sidebar footer, notices, the Inbox | Notes
+// tabs and the credits banner.
+@use '../styles/tokens' as *;
+
+// ---------- sidebar footer ----------
+.sidebar-footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-3 $space-4;
+  border-top: 1px solid $border;
+  font-size: 12px;
+  color: $text-secondary;
+}
+
+.signed-in-as {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ---------- notice (below sync status) ----------
+.notice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-2 $space-4;
+  border-bottom: 1px solid $border;
+  font-size: 12px;
+}
+
+.notice-success {
+  background: $surface;
+  color: $text-primary;
+}
+
+.notice-error {
+  background: rgba($danger, 0.08);
+  color: $danger;
+}
+
+.notice-dismiss {
+  background: none;
+  border: none;
+  padding: 0 $space-1;
+  font-size: 16px;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.6;
+
+  &:hover {
+    opacity: 1;
+  }
+}
+
+// ---------- Inbox | Notes switch ----------
+.sidebar-tabs {
+  flex-shrink: 0;
+  display: flex;
+  border-bottom: 1px solid $border;
+
+  button {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: $space-2;
+    padding: $space-2 0;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    font-size: 13px;
+    font-weight: 500;
+    color: $text-secondary;
+
+    &.active {
+      color: $text-primary;
+      border-bottom-color: $accent;
+    }
+  }
+}
+
+// reminders due: the only nudge reminders give, so it's red
+.due-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: $danger;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+// ---------- credits banner (AI provider out of credits) ----------
+.credits-banner {
+  flex-shrink: 0;
+  background: $danger;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.credits-banner-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $space-3;
+  padding: $space-2 $space-4;
+
+  & + & {
+    border-top: 1px solid rgba(255, 255, 255, 0.25);
+  }
+}
+
+.credits-banner-hide {
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #fff;
+  font-size: 12px;
+  text-decoration: underline;
+}

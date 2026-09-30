@@ -1,0 +1,118 @@
+// Shared pieces used across features: the two-way switch, form fields, the AI
+// tag, the voice button.
+@use '../styles/tokens' as *;
+
+// ---------- two-way switch (AI | Search, Received | Sent) ----------
+.mode-toggle {
+  display: flex;
+  gap: 2px;
+  align-self: flex-start;
+  padding: 2px;
+  border-radius: 6px;
+  background: $accent-soft;
+
+  button {
+    border: none;
+    background: none;
+    padding: 2px $space-3;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: $text-secondary;
+
+    &.active {
+      background: $surface;
+      color: $text-primary;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    }
+  }
+}
+
+// ---------- forms ----------
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+  margin-bottom: $space-3;
+  font-size: 12px;
+  font-weight: 500;
+
+  input {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 400;
+    padding: $space-2 $space-3;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $bg;
+    color: $text-primary;
+
+    &:focus {
+      outline: none;
+      border-color: $accent;
+    }
+  }
+}
+
+.form-error {
+  margin: 0 0 $space-3;
+  font-size: 12px;
+  color: $danger;
+}
+
+// ---------- the AI tag ----------
+// marks what the AI added (see "AI features" in CLAUDE.md)
+.ai-tag {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: $accent;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+// ---------- voice ----------
+.voice-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid $border;
+  color: $text-primary;
+
+  &:hover:not(:disabled) {
+    background: $accent-soft;
+  }
+
+  // unmistakable while the microphone is on
+  &.recording {
+    background: $danger;
+    border-color: $danger;
+    color: #fff;
+
+    &:hover:not(:disabled) {
+      background: #93341A; // $danger, darker
+    }
+  }
+}
+
+.ask-bar-row .voice-button {
+  flex-shrink: 0;
+}
+
+.recording-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  animation: recording-pulse 1s ease-in-out infinite;
+}
+
+@keyframes recording-pulse {
+  50% { opacity: 0.3; }
+}
+
+.ask-bar-error {
+  margin: 0;
+}
