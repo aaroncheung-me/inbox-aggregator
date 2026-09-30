@@ -1,13 +1,76 @@
 // ---------- design tokens ----------
-$bg: #FAFAF8;
-$surface: #FFFFFF;
-$border: #E4E1DA;
-$text-primary: #1A1A1A;
-$text-secondary: #6B6B63;
-$accent: #3B4A5A;
-$accent-hover: #2C3944;
-$accent-soft: #EDF1F4;
-$danger: #B3401F;
+// Only variables and mixins: every stylesheet loads this, so anything that
+// outputs CSS would be repeated. The colors are CSS variables (set in base.scss)
+// so light and dark can switch without reloading.
+
+// Colors, light and dark. The dark set follows the device's setting, unless
+// the user chose Light or Dark (data-theme on <html>, see theme.js).
+$light-colors: (
+  bg: #FAFAF8,
+  surface: #FFFFFF,
+  border: #E4E1DA,
+  text-primary: #1A1A1A,
+  text-secondary: #6B6B63,
+  accent: #3B4A5A,
+  accent-hover: #2C3944,
+  accent-soft: #EDF1F4,
+  on-accent: #FFFFFF, // text on a filled accent button
+  danger: #B3401F, // red text and borders
+  danger-fill: #B3401F, // red backgrounds, under on-danger text
+  danger-fill-hover: #93341A,
+  on-danger: #FFFFFF,
+  sticky: #FFF4B8, // sticky notes
+  sticky-edge: #EADC8A,
+  sticky-edge-strong: #C9B24A,
+  sticky-field: #FFFDF0,
+);
+
+$dark-colors: (
+  bg: #151618,
+  surface: #1C1E21,
+  border: #2F3237,
+  text-primary: #E6E4DF,
+  text-secondary: #9A988F,
+  accent: #A7BACD,
+  accent-hover: #C3D1DE,
+  accent-soft: #22303D,
+  on-accent: #121416,
+  danger: #F0876B,
+  danger-fill: #B8432A,
+  danger-fill-hover: #9C3620,
+  on-danger: #FFFFFF,
+  sticky: #3D3719,
+  sticky-edge: #6B5F2A,
+  sticky-edge-strong: #A08D3D,
+  sticky-field: #2E2A15,
+);
+
+// Sets one color set as CSS variables (--bg, --surface...).
+@mixin color-variables($colors) {
+  @each $name, $value in $colors {
+    --#{$name}: #{$value};
+  }
+}
+
+$bg: var(--bg);
+$surface: var(--surface);
+$border: var(--border);
+$text-primary: var(--text-primary);
+$text-secondary: var(--text-secondary);
+$accent: var(--accent);
+$accent-hover: var(--accent-hover);
+$accent-soft: var(--accent-soft);
+$on-accent: var(--on-accent);
+$danger: var(--danger);
+$danger-fill: var(--danger-fill);
+$danger-fill-hover: var(--danger-fill-hover);
+$on-danger: var(--on-danger);
+
+// sticky notes
+$sticky: var(--sticky);
+$sticky-edge: var(--sticky-edge);
+$sticky-edge-strong: var(--sticky-edge-strong);
+$sticky-field: var(--sticky-field);
 
 $font-ui: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
 $font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
@@ -21,7 +84,3 @@ $space-8: 32px;
 
 // the main pane's centered column
 $pane-column: 680px;
-
-// sticky notes
-$sticky: #FFF4B8;
-$sticky-edge: #EADC8A;

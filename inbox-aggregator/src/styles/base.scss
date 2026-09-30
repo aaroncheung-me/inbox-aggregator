@@ -2,6 +2,27 @@
 // (ActionMenu) and buttons.
 @use './tokens' as *;
 
+// ---------- colors ----------
+// Light unless the device prefers dark; a choice made in Settings (data-theme on
+// <html>, see theme.js) wins over the device. color-scheme also switches the
+// browser's own parts: scrollbars, form controls.
+:root {
+  color-scheme: light;
+  @include color-variables($light-colors);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    @include color-variables($dark-colors);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  @include color-variables($dark-colors);
+}
+
 // ---------- reset ----------
 * {
   box-sizing: border-box;
@@ -164,7 +185,7 @@ button {
 // ---------- buttons ----------
 .btn {
   background: $accent;
-  color: #fff;
+  color: $on-accent;
   border: none;
   padding: $space-2 $space-3;
   border-radius: 6px;
@@ -193,10 +214,11 @@ button {
 }
 
 .btn-danger {
-  background: $danger;
+  background: $danger-fill;
+  color: $on-danger;
 
   &:hover:not(:disabled) {
-    background: #93341A; // $danger, darker
+    background: $danger-fill-hover;
   }
 }
 

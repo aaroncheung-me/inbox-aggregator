@@ -194,22 +194,28 @@
   max-width: calc(100vw - #{$space-4 * 2});
   padding: $space-2 $space-4;
   border-radius: 8px;
+  // the page's colors reversed, so it stands out in light and dark
   background: $text-primary;
-  color: #fff;
+  color: $surface;
   font-size: 14px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 
   .btn {
-    background: #fff;
+    background: $surface;
     color: $text-primary;
   }
 
   .notice-dismiss {
-    color: #fff;
+    color: $surface;
   }
 
   &.failed {
-    background: $danger;
+    background: $danger-fill;
+    color: $on-danger;
+
+    .notice-dismiss {
+      color: $on-danger;
+    }
   }
 }
 

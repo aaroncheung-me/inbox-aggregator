@@ -234,7 +234,7 @@
   white-space: nowrap;
 
   &.due {
-    background: rgba($danger, 0.1);
+    background: color-mix(in srgb, #{$danger} 10%, transparent);
     color: $danger;
     font-weight: 600;
   }
@@ -383,8 +383,8 @@
   font-size: 13px;
 
   &.reminder.due {
-    border-color: rgba($danger, 0.5);
-    background: rgba($danger, 0.06);
+    border-color: color-mix(in srgb, #{$danger} 50%, transparent);
+    background: color-mix(in srgb, #{$danger} 6%, transparent);
     color: $danger;
   }
 
@@ -635,14 +635,14 @@ button.addon-chip-main:hover {
     padding: $space-2;
     border: 1px solid $sticky-edge;
     border-radius: 4px;
-    background: #fffdf0;
+    background: $sticky-field;
     font-family: inherit;
     font-size: 14px;
     color: $text-primary;
 
     &:focus {
       outline: none;
-      border-color: #C9B24A; // $sticky-edge, darker
+      border-color: $sticky-edge-strong;
     }
   }
 }

@@ -8,7 +8,17 @@
 
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#FFFFFF" />
+    <!-- the browser's own bars (phone status bar, installed app's title bar), matching the theme -->
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1C1E21" media="(prefers-color-scheme: dark)" />
+    <!-- a Light or Dark choice saved in Settings (src/shell/theme.js), applied
+         before anything draws so the page never flashes the other theme -->
+    <script>
+      try {
+        var theme = localStorage.getItem('theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch (e) {}
+    </script>
 
     <!-- Add to Home Screen on iPhone: opens full-screen, without Safari's bars -->
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

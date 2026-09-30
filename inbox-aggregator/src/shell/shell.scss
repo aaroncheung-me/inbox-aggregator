@@ -39,7 +39,7 @@
 }
 
 .notice-error {
-  background: rgba($danger, 0.08);
+  background: color-mix(in srgb, #{$danger} 8%, transparent);
   color: $danger;
 }
 
@@ -90,8 +90,8 @@
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: $danger;
-  color: #fff;
+  background: $danger-fill;
+  color: $on-danger;
   font-size: 11px;
   font-weight: 600;
   line-height: 18px;
@@ -100,8 +100,8 @@
 // ---------- credits banner (AI provider out of credits) ----------
 .credits-banner {
   flex-shrink: 0;
-  background: $danger;
-  color: #fff;
+  background: $danger-fill;
+  color: $on-danger;
   font-size: 12px;
   line-height: 1.4;
 }
@@ -123,7 +123,7 @@
   padding: 0;
   border: none;
   background: none;
-  color: #fff;
+  color: $on-danger;
   font-size: 12px;
   text-decoration: underline;
 }

@@ -96,7 +96,7 @@
 
   &:hover {
     background: $accent;
-    color: #fff;
+    color: $on-accent;
   }
 }
 
@@ -151,9 +151,9 @@
   flex-wrap: wrap;
   gap: $space-2;
   padding: $space-2 $space-3;
-  border: 1px solid #EADC8A; // same edge as sticky notes
+  border: 1px solid $sticky-edge; // looks like a sticky note
   border-radius: 6px;
-  background: #FFF4B8;
+  background: $sticky;
   font-size: 13px;
 
   &.undone {

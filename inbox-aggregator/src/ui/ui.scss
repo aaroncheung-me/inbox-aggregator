@@ -66,7 +66,7 @@
   padding: 0 4px;
   border-radius: 3px;
   background: $accent;
-  color: #fff;
+  color: $on-accent;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -87,12 +87,12 @@
 
   // unmistakable while the microphone is on
   &.recording {
-    background: $danger;
-    border-color: $danger;
-    color: #fff;
+    background: $danger-fill;
+    border-color: $danger-fill;
+    color: $on-danger;
 
     &:hover:not(:disabled) {
-      background: #93341A; // $danger, darker
+      background: $danger-fill-hover;
     }
   }
 }
@@ -105,7 +105,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #fff;
+  background: $on-danger;
   animation: recording-pulse 1s ease-in-out infinite;
 }
 
