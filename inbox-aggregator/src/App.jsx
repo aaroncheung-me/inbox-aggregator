@@ -1,36 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
-import {
-  getMessages,
-  getMessage,
-  getAccounts,
-  updateAccount,
-  syncAll,
-  searchMessagesBasic,
-  askAssistant,
-  getNotes,
-  createNote,
-  aiSaveNote,
-  suggestOrganizing,
-  getStatus,
-  updateNote,
-  deleteNote,
-  addNoteAddon,
-  updateNoteAddon,
-  removeNoteAddon,
-  getReplyInfo,
-  pinMessage,
-  getTempAddresses,
-  createTempAddress,
-  updateTempAddress,
-  deleteTempAddress,
-  sendEmail,
-  getSendStatus,
-  cancelSend,
-} from './api';
-import { PHONE_LAYOUT } from './layout';
+import { useState } from 'react';
 import { dueReminderCount } from './features/notes/notes';
-import { newDraft, draftFromMessage, fullBody, draftHasContent, DRAFT_TITLES } from './features/compose/compose';
+import { DRAFT_TITLES } from './features/compose/compose';
 import { useNow } from './hooks/useNow';
+import { useNavigation } from './shell/useNavigation';
+import { useProviderStatus } from './shell/useProviderStatus';
+import { useSync, oldestSyncTime } from './shell/useSync';
+import { useMessageList } from './features/email/useMessageList';
+import { useOpenEmail } from './features/email/useOpenEmail';
+import { useSearch } from './features/email/useSearch';
+import { useAccounts } from './features/accounts/useAccounts';
+import { useTempAddresses } from './features/accounts/useTempAddresses';
+import { useNotes } from './features/notes/useNotes';
+import { useChat } from './features/assistant/useChat';
+import { useCompose } from './features/compose/useCompose';
 import Sidebar from './shell/Sidebar';
 import MainPane from './shell/MainPane';
 import CreditsBanner from './shell/CreditsBanner';
@@ -39,30 +21,6 @@ import AskBar from './features/assistant/AskBar';
 import SidebarTabs from './shell/SidebarTabs';
 import SendingBar from './features/compose/SendingBar';
 import './styles/app.scss';
-
-const PAGE_SIZE = 25;
-
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-const REFRESH_ON_RETURN_MS = 30 * 1000;
-
-// The assistant's answer as it's being worked out, { question, steps, text },
-// updated with each progress event from askAssistant (see api.js).
-function applyProgress(pending, event) {
-  if (!pending) return pending;
-  if (event.type === 'step') return { ...pending, steps: [...pending.steps, event.text] };
-  if (event.type === 'text') return { ...pending, text: pending.text + event.delta };
-  if (event.type === 'text_reset') return { ...pending, text: '' };
-  return pending;
-}
-
-// The least recently synced account decides the "synced Xm ago" label, so it
-// never looks fresher than it is. Any never-synced account means "never synced".
-function oldestSyncTime(accounts) {
-  if (!accounts.length) return null;
-  const times = accounts.map(a => a.last_synced_at);
-  if (times.some(t => !t)) return null;
-  return times.reduce((oldest, t) => (t < oldest ? t : oldest));
-}
 
 // After connecting an account, the server redirects back with ?connected=<email>
 // or ?connect_error=<reason>. Read it once at startup and tidy the URL.
@@ -90,705 +48,56 @@ function readLaunchAction() {
 }
 
 const launchAction = readLaunchAction();
-// The freshly fetched first page on top, then the rest of what's already listed
-// (emails pushed down by new ones, and any pages added with "Load more").
-function mergeFirstPage(listed, page) {
-  const fresh = new Set(page.messages.map(m => m.id));
-  return [...page.messages, ...listed.filter(m => !fresh.has(m.id))];
-}
 
-// StrictMode runs effects twice in development; this keeps the startup sync to one run
-let startupSyncStarted = false;
-// Opening the app syncs if the least recently synced account is older than this.
-// (On a free host the server sleeps, so nothing syncs in the background.)
-const SYNC_ON_OPEN_AFTER_MS = 5 * 60 * 1000;
-
-// Syncs every account, then fetches what the sidebar needs to reflect it. The
-// first page is fetched even when this sync found nothing: the background sync
-// may already have saved mail the list doesn't show yet.
-// folder: the list on screen, 'inbox' or 'sent'
-async function syncAndReload(folder) {
-  const result = await syncAll();
-  for (const r of result.results) {
-    if (r.error) console.error(`Sync failed for ${r.emailAddress}: ${r.error}`);
-  }
-  // temp addresses too, since their email counts may have changed
-  const [accounts, page, temp] = await Promise.all([
-    getAccounts(),
-    getMessages({ limit: PAGE_SIZE, offset: 0, folder }),
-    getTempAddresses().catch(() => null),
-  ]);
-  return { accounts, page, temp };
-}
-
+// The app: each feature keeps its own state in a hook (features/*/use*.js,
+// shell/use*.js), and this wires them together and to the two panes.
 function App({ userEmail, onSignOut }) {
-  // message list + pagination
-  const [messages, setMessages] = useState([]);
-  const [total, setTotal] = useState(0);
-  // pinned emails, shown in their own group above Received (sent with the first page)
-  const [pinned, setPinned] = useState([]);
-  // temp addresses: { available, reason, domain, addresses } (see TempAddresses)
-  const [tempAddresses, setTempAddresses] = useState(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  // bumped whenever the list is reloaded, so slower, older responses can be ignored
-  const listVersion = useRef(0);
-  // which mail the list holds: 'inbox' (received) or 'sent', chosen above the
-  // list. The ref is for async code that must use the current one.
-  const [folder, setFolder] = useState('inbox');
-  const listFolder = useRef('inbox');
-
-  // accounts / sync status
-  const [accounts, setAccounts] = useState([]);
-  // a just-connected account is synced immediately on load
-  const [syncing, setSyncing] = useState(connectResult?.type === 'success');
   const [notice, setNotice] = useState(connectResult);
-  const colorSaveTimers = useRef(new Map()); // accountId -> pending save timer
-
-  // selected email
-  const [selectedMessageId, setSelectedMessageId] = useState(null);
-  // phone layout only: 'list' (sidebar) or 'main' (email or chat)
-  const [phoneScreen, setPhoneScreen] = useState('list');
-  // the last email fetched: { id, message, error }. Loading and errors are read
-  // off it below, so a stale response can't show under a newer selection.
-  const [loadedMessage, setLoadedMessage] = useState(null);
-  const current = loadedMessage?.id === selectedMessageId ? loadedMessage : null;
-  const selectedMessage = current?.message ?? null;
-  const messageError = current?.error ?? null;
-  const messageLoading = selectedMessageId != null && !current;
-
-  // basic search: null = showing the inbox, otherwise
-  // { query, results, hasMore, loading, loadingMore, error }
-  const [search, setSearch] = useState(null);
-
-  // AI chat
-  const [chatHistory, setChatHistory] = useState([]);
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatPending, setChatPending] = useState(null); // the answer in progress, see applyProgress
-  const [chatError, setChatError] = useState(null);
-
-  // notes: the sidebar shows either the inbox or the notes
-  // the "New note" shortcut opens straight onto Notes
-  const [tab, setTab] = useState(launchAction === 'new-note' ? 'notes' : 'inbox');
-  const [notes, setNotes] = useState([]);
-  const [selectedNoteId, setSelectedNoteId] = useState(null);
-  const selectedNote = notes.find(note => note.id === selectedNoteId) || null;
-  // a heads-up from the last AI save, shown on the note it made: { noteId, message }
-  const [aiHeadsUp, setAiHeadsUp] = useState(null);
-
-  // writing an email: the draft (see compose.js) or null, whether it's on screen
-  // (the assistant beside it can open emails and notes), and that assistant's own chat
-  const [draft, setDraft] = useState(null);
-  const [draftVisible, setDraftVisible] = useState(false);
-  const [draftChat, setDraftChat] = useState([]);
-  const [draftChatLoading, setDraftChatLoading] = useState(false);
-  const [draftChatPending, setDraftChatPending] = useState(null);
-  const [draftChatError, setDraftChatError] = useState(null);
-  // bumped whenever a draft opens or closes, so a late answer about an old one is dropped
-  const draftSession = useRef(0);
-  const [sending, setSending] = useState(false);
-  // the email just sent, until it's confirmed: { id, sendAt, draft, chat, status, error, undoError }
-  const [outgoing, setOutgoing] = useState(null);
-  const followedSend = useRef(null); // the outbox id whose progress is being checked
-
-  // out-of-credits problems with the AI providers, for the red banner
-  const [providerProblems, setProviderProblems] = useState([]);
-  const [hiddenProblems, setHiddenProblems] = useState({}); // provider -> the `since` that was hidden
-
-  function refreshStatus() {
-    getStatus().then(status => setProviderProblems(status.problems)).catch(() => {});
-  }
-
-  // checked on open and every few minutes, since background syncs can hit it too
-  useEffect(() => {
-    let active = true;
-    const load = () => getStatus().then(status => { if (active) setProviderProblems(status.problems); }).catch(() => {});
-    load();
-    const timer = setInterval(load, 5 * 60 * 1000);
-    return () => { active = false; clearInterval(timer); };
-  }, []);
   // re-checked every minute, so a reminder turns due while the app is open
   const now = useNow();
 
-  // initial load
-  useEffect(() => {
-    getNotes().then(setNotes).catch(() => {});
-    getTempAddresses().then(setTempAddresses).catch(() => {});
-
-    getMessages({ limit: PAGE_SIZE, offset: 0 })
-      .then(data => {
-        setMessages(data.messages);
-        setPinned(data.pinned || []);
-        setTotal(data.total);
-      })
-      .catch(() => {});
-
-    const accountsLoaded = getAccounts();
-    accountsLoaded.then(setAccounts).catch(() => {});
-
-    if (startupSyncStarted) return;
-    startupSyncStarted = true;
-
-    // Sync right after connecting an account, or when opening the app with stale
-    // mail. The saved messages above show immediately; new ones appear when this finishes.
-    const syncNeeded = connectResult?.type === 'success'
-      ? Promise.resolve(true)
-      : accountsLoaded.then(accounts => {
-          const oldest = oldestSyncTime(accounts);
-          return accounts.length > 0 && (!oldest || Date.now() - new Date(oldest).getTime() > SYNC_ON_OPEN_AFTER_MS);
-        });
-
-    syncNeeded
-      .then(needed => {
-        if (!needed) return;
-        setSyncing(true);
-        const version = ++listVersion.current;
-        return syncAndReload(listFolder.current).then(({ accounts, page, temp }) => {
-          setAccounts(accounts);
-          if (temp) setTempAddresses(temp);
-          showNewMail(page, version);
-        });
-      })
-      .catch(err => console.error(err))
-      .finally(() => setSyncing(false));
-  }, []);
-
-  // fetch full detail whenever a message is selected; a response for an email
-  // that's no longer selected (clicked away before it arrived) is dropped
-  useEffect(() => {
-    if (selectedMessageId == null) return;
-    let stale = false;
-    getMessage(selectedMessageId)
-      .then(message => { if (!stale) setLoadedMessage({ id: selectedMessageId, message, error: null }); })
-      .catch(err => { if (!stale) setLoadedMessage({ id: selectedMessageId, message: null, error: err.message }); });
-    return () => { stale = true; };
-  }, [selectedMessageId]);
-
-  // Replaces the list with the first page. Returns false if a newer reload
-  // started while this one was in flight (its result is then dropped).
-  function showFirstPage(page, version) {
-    if (version !== listVersion.current) return false;
-    setMessages(page.messages);
-    setTotal(page.total);
-    setPinned(page.pinned || []);
-    return true;
-  }
-
-  // After a sync: adds newly arrived mail to the top without losing "Load more" progress.
-  function showNewMail(page, version) {
-    if (version !== listVersion.current) return;
-    setMessages(prev => mergeFirstPage(prev, page));
-    setTotal(page.total);
-    setPinned(page.pinned || []);
-  }
-
-  // Coming back to the app (its tab or window, or reopening the phone app)
-  // picks up what the background sync saved meanwhile, and notes changed on
-  // another device. Only reads the database, at most once per REFRESH_ON_RETURN_MS.
-  const lastRefresh = useRef(Date.now());
-  const refreshOnReturn = useRef(null);
-  useEffect(() => {
-    refreshOnReturn.current = async () => {
-      if (syncing || Date.now() - lastRefresh.current < REFRESH_ON_RETURN_MS) return;
-      lastRefresh.current = Date.now();
-      const version = listVersion.current;
-      try {
-        const [page, freshAccounts, freshNotes, freshTemp] = await Promise.all([
-          getMessages({ limit: PAGE_SIZE, offset: 0, folder: listFolder.current }),
-          getAccounts(),
-          getNotes(),
-          getTempAddresses().catch(() => null),
-        ]);
-        showNewMail(page, version);
-        setAccounts(freshAccounts);
-        setNotes(freshNotes);
-        if (freshTemp) setTempAddresses(freshTemp);
-      } catch (err) {
-        console.error(err);
-      }
-    };
+  const status = useProviderStatus();
+  // the "New note" shortcut opens straight onto Notes
+  const nav = useNavigation(launchAction === 'new-note' ? 'notes' : 'inbox');
+  const list = useMessageList();
+  const accounts = useAccounts({ onNotice: setNotice, reloadMessages: list.reload });
+  const temp = useTempAddresses({ onNotice: setNotice, reloadMessages: list.reload });
+  const notes = useNotes({ onNotice: setNotice, refreshStatus: status.refresh });
+  const sync = useSync({
+    // a just-connected account is synced immediately on load
+    syncNow: connectResult?.type === 'success',
+    list,
+    setAccounts: accounts.setAccounts,
+    setTemp: temp.setTemp,
+    setNotes: notes.setNotes,
+    refreshStatus: status.refresh,
   });
-  useEffect(() => {
-    const handleReturn = () => {
-      if (document.visibilityState === 'visible') refreshOnReturn.current?.();
-    };
-    document.addEventListener('visibilitychange', handleReturn);
-    window.addEventListener('focus', handleReturn);
-    return () => {
-      document.removeEventListener('visibilitychange', handleReturn);
-      window.removeEventListener('focus', handleReturn);
-    };
-  }, []);
-
-  async function reloadMessages() {
-    const version = ++listVersion.current;
-    showFirstPage(await getMessages({ limit: PAGE_SIZE, offset: 0, folder: listFolder.current }), version);
-  }
-
-  // Received and Sent share the one list: switching between them reloads it.
-  function changeFolder(next) {
-    if (next === listFolder.current) return;
-    listFolder.current = next;
-    setFolder(next);
-    setMessages([]);
-    setTotal(0);
-    reloadMessages().catch(err => console.error(err));
-  }
-
-  async function loadMore() {
-    const version = listVersion.current;
-    setLoadingMore(true);
-    try {
-      const data = await getMessages({ limit: PAGE_SIZE, offset: messages.length, folder: listFolder.current });
-      // the list was reloaded mid-request (e.g. an account toggled), so this page no longer fits
-      if (version === listVersion.current) setMessages(prev => [...prev, ...data.messages]);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingMore(false);
-    }
-  }
-
-  async function handleSync() {
-    setSyncing(true);
-    try {
-      const version = ++listVersion.current;
-      const { accounts, page, temp } = await syncAndReload(listFolder.current);
-      setAccounts(accounts);
-      if (temp) setTempAddresses(temp);
-      showNewMail(page, version);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setSyncing(false);
-      refreshStatus(); // indexing new mail may have hit a credits problem
-    }
-  }
-
-  // Updates the checkbox immediately, then saves; puts it back if saving fails.
-  async function handleToggleAccount(accountId, showInInbox) {
-    const setShown = shown =>
-      setAccounts(prev => prev.map(a => (a.id === accountId ? { ...a, show_in_inbox: shown } : a)));
-
-    setShown(showInInbox);
-    try {
-      await updateAccount(accountId, { show_in_inbox: showInInbox });
-      await reloadMessages();
-    } catch (err) {
-      console.error(err);
-      setShown(!showInInbox);
-      setNotice({ type: 'error', text: "Couldn't update that account, try again" });
-    }
-  }
-
-  // Recolors immediately; saves once the color stops changing, since the
-  // custom picker fires on every step of a drag. On failure, reloads the
-  // accounts so the dot shows what's actually saved.
-  function handleChangeAccountColor(accountId, color) {
-    setAccounts(prev => prev.map(a => (a.id === accountId ? { ...a, color } : a)));
-
-    clearTimeout(colorSaveTimers.current.get(accountId));
-    colorSaveTimers.current.set(accountId, setTimeout(async () => {
-      colorSaveTimers.current.delete(accountId);
-      try {
-        await updateAccount(accountId, { color });
-      } catch (err) {
-        console.error(err);
-        setNotice({ type: 'error', text: "Couldn't save that color, try again" });
-        getAccounts().then(setAccounts).catch(() => {});
-      }
-    }, 400));
-  }
+  const openEmail = useOpenEmail(nav.selectedMessageId, { reloadMessages: list.reload, onNotice: setNotice });
+  const search = useSearch();
+  const chat = useChat({
+    refreshNotes: notes.refresh,
+    refreshStatus: status.refresh,
+    onNoteDeleted: noteId => { if (nav.selectedNoteId === noteId) nav.closeNote(); },
+  });
+  const compose = useCompose({
+    accounts: accounts.accounts,
+    openMessage: openEmail.message,
+    onNotice: setNotice,
+    showDraft: nav.showDraft,
+    hideDraft: nav.hideDraft,
+    showListScreen: nav.showListScreen,
+    reloadMessages: list.reload,
+    refreshNotes: notes.refresh,
+    refreshStatus: status.refresh,
+  });
+  const { draft } = compose;
 
   // Form-based connects (IMAP) finish without leaving the page, so sync right away.
   // Sign-in connects (Gmail) come back through a redirect instead, see readConnectResult.
   function handleAccountConnected(emailAddress) {
     setNotice({ type: 'success', text: `Connected ${emailAddress}` });
-    getAccounts().then(setAccounts).catch(() => {}); // show it in the panel before its first sync finishes
-    handleSync();
-  }
-
-  // Results only apply if the search box still holds the same query when they arrive.
-  function updateSearchIfCurrent(query, changes) {
-    setSearch(prev => (prev?.query === query ? { ...prev, ...changes } : prev));
-  }
-
-  async function handleSearch(query) {
-    setSearch({ query, results: [], hasMore: false, loading: true, loadingMore: false, error: null });
-    try {
-      const data = await searchMessagesBasic(query);
-      updateSearchIfCurrent(query, { results: data.messages, hasMore: data.hasMore, loading: false });
-    } catch (err) {
-      updateSearchIfCurrent(query, { loading: false, error: err.message });
-    }
-  }
-
-  async function loadMoreSearch() {
-    const { query, results } = search;
-    updateSearchIfCurrent(query, { loadingMore: true });
-    try {
-      const data = await searchMessagesBasic(query, { offset: results.length });
-      setSearch(prev => (prev?.query === query
-        ? { ...prev, results: [...prev.results, ...data.messages], hasMore: data.hasMore, loadingMore: false }
-        : prev));
-    } catch (err) {
-      console.error(err);
-      updateSearchIfCurrent(query, { loadingMore: false });
-    }
-  }
-
-  // ---------- phone screens ----------
-  // Opening the main screen adds a browser history entry, so the phone's back
-  // gesture (or back button) returns to the list instead of leaving the app.
-
-  useEffect(() => {
-    function handlePopState() {
-      setPhoneScreen(window.history.state?.screen === 'main' ? 'main' : 'list');
-    }
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  function showMainScreen() {
-    if (phoneScreen === 'main' || !window.matchMedia(PHONE_LAYOUT).matches) return;
-    window.history.pushState({ screen: 'main' }, '');
-    setPhoneScreen('main');
-  }
-
-  function showListScreen() {
-    // going back through history keeps it in step; popstate then switches the screen
-    if (window.history.state?.screen === 'main') window.history.back();
-    else setPhoneScreen('list');
-  }
-
-  // The main pane shows one thing at a time: an email, a note, or the chat.
-
-  // (While an email is being written, these open things from its assistant,
-  // and the draft waits behind a "Back to your email" link.)
-
-  function openMessage(id) {
-    setDraftVisible(false);
-    setSelectedNoteId(null);
-    setSelectedMessageId(id);
-    showMainScreen();
-  }
-
-  function openNote(id) {
-    setDraftVisible(false);
-    setSelectedMessageId(null);
-    setSelectedNoteId(id);
-    setTab('notes');
-    showMainScreen();
-  }
-
-  function openChat() {
-    setDraftVisible(false);
-    setSelectedNoteId(null);
-    setSelectedMessageId(null);
-    showMainScreen();
-  }
-
-  function showDraft() {
-    setDraftVisible(true);
-    showMainScreen();
-  }
-
-  // Pins or unpins the open email, then reloads the list so it moves in or out
-  // of the Pinned group.
-  async function handleTogglePin() {
-    const message = selectedMessage;
-    if (!message) return;
-    try {
-      const { pinned_at } = await pinMessage(message.id, !message.pinned_at);
-      setLoadedMessage(prev => (prev?.id === message.id ? { ...prev, message: { ...prev.message, pinned_at } } : prev));
-      await reloadMessages();
-    } catch (err) {
-      setNotice({ type: 'error', text: err.message });
-    }
-  }
-
-  // ---------- temp addresses ----------
-
-  async function handleCreateTempAddress(lifetime, label) {
-    const created = await createTempAddress(lifetime, label);
-    setTempAddresses(await getTempAddresses());
-    return created;
-  }
-
-  async function handleExtendTempAddress(id, lifetime) {
-    await updateTempAddress(id, { lifetime });
-    setTempAddresses(await getTempAddresses());
-  }
-
-  function setTempLocally(id, changes) {
-    setTempAddresses(prev => prev && {
-      ...prev,
-      addresses: prev.addresses.map(a => (a.id === id ? { ...a, ...changes } : a)),
-    });
-  }
-
-  // Like the account checkboxes: changes at once, then saves and reloads the
-  // list; puts it back if saving fails.
-  async function handleToggleTempAddress(id, shown) {
-    setTempLocally(id, { show_in_inbox: shown });
-    try {
-      await updateTempAddress(id, { show_in_inbox: shown });
-      await reloadMessages();
-    } catch (err) {
-      console.error(err);
-      setTempLocally(id, { show_in_inbox: !shown });
-      setNotice({ type: 'error', text: "Couldn't update that temp address, try again" });
-    }
-  }
-
-  // Like account colors: recolors at once (the list and open email read the
-  // color from here), and saves once the picker stops changing.
-  const tempColorTimers = useRef(new Map());
-  function handleChangeTempColor(id, color) {
-    setTempLocally(id, { color });
-    clearTimeout(tempColorTimers.current.get(id));
-    tempColorTimers.current.set(id, setTimeout(async () => {
-      tempColorTimers.current.delete(id);
-      try {
-        await updateTempAddress(id, { color });
-      } catch (err) {
-        console.error(err);
-        setNotice({ type: 'error', text: "Couldn't save that color, try again" });
-        getTempAddresses().then(setTempAddresses).catch(() => {});
-      }
-    }, 400));
-  }
-
-  // its emails are deleted too, so the list is reloaded
-  async function handleDeleteTempAddress(id) {
-    await deleteTempAddress(id);
-    setTempAddresses(await getTempAddresses());
-    await reloadMessages();
-  }
-
-  // ---------- writing and sending email ----------
-
-  const ownAddresses = accounts.map(a => a.email_address.toLowerCase());
-
-  // Opens a draft on the writing screen (chat: its assistant conversation, when
-  // bringing back one that was undone). Asks first if it would replace one with
-  // text in it, unless the caller already has (force).
-  function openDraft(next, chat = [], force = false) {
-    if (!force && draft && draftHasContent(draft) && !window.confirm('Discard the email you are writing?')) return false;
-    draftSession.current++;
-    setDraft(next);
-    setDraftChat(chat);
-    setDraftChatError(null);
-    setDraftChatLoading(false);
-    setDraftChatPending(null);
-    showDraft();
-    return true;
-  }
-
-  function closeDraft() {
-    draftSession.current++;
-    setDraft(null);
-    setDraftVisible(false);
-    setDraftChat([]);
-    setDraftChatError(null);
-    setDraftChatLoading(false);
-    setDraftChatPending(null);
-  }
-
-  function handleNewEmail() {
-    const account = accounts.find(a => a.show_in_inbox) || accounts[0];
-    if (!account) {
-      setNotice({ type: 'error', text: 'Connect an email account first' });
-      return;
-    }
-    openDraft(newDraft(account.id));
-  }
-
-  // kind: 'reply' | 'replyAll' | 'forward', on the email that's open. The draft
-  // opens straight away; if the sender asked for replies to go elsewhere
-  // (Reply-To), the To line is updated when that arrives, unless it was edited.
-  function handleReply(kind) {
-    const message = selectedMessage;
-    if (!message) return;
-    const initial = draftFromMessage(kind, message, ownAddresses);
-    if (!openDraft(initial) || kind === 'forward') return;
-
-    getReplyInfo(message.id).then(({ replyTo }) => {
-      if (!replyTo) return;
-      const better = draftFromMessage(kind, message, ownAddresses, replyTo);
-      setDraft(prev => (prev?.originalMessageId === message.id && prev.to === initial.to && prev.cc === initial.cc
-        ? { ...prev, to: better.to, cc: better.cc, showCcBcc: prev.showCcBcc || Boolean(better.cc) }
-        : prev));
-    });
-  }
-
-  function updateDraft(changes) {
-    setDraft(prev => (prev ? { ...prev, ...changes, error: null } : prev));
-  }
-
-  // On a phone this always lands on the list, whichever of the draft's two
-  // screens (the email or its assistant) it was discarded from.
-  function handleDiscardDraft() {
-    if (draftHasContent(draft) && !window.confirm('Discard this email?')) return;
-    closeDraft();
-    showListScreen();
-  }
-
-  async function handleSendDraft() {
-    if (!draft || sending) return;
-    const sent = draft;
-    setSending(true);
-    try {
-      const { id, sendAt } = await sendEmail({
-        accountId: sent.accountId,
-        to: sent.to,
-        cc: sent.showCcBcc ? sent.cc : '',
-        bcc: sent.showCcBcc ? sent.bcc : '',
-        subject: sent.subject,
-        body: fullBody(sent),
-        // a forward starts a new conversation, so only replies are threaded
-        replyToMessageId: sent.mode === 'reply' ? sent.originalMessageId : null,
-      });
-      setOutgoing({ id, sendAt, draft: sent, chat: draftChat, status: 'waiting', error: null, undoError: null });
-      closeDraft();
-      followSend(id, sendAt);
-    } catch (err) {
-      setDraft(prev => (prev ? { ...prev, error: err.message } : prev));
-    } finally {
-      setSending(false);
-    }
-  }
-
-  // Once the undo time is up, checks until the server says it went (or didn't).
-  async function followSend(id, sendAt) {
-    followedSend.current = id;
-    const update = changes => setOutgoing(prev => (prev?.id === id ? { ...prev, ...changes } : prev));
-
-    await delay(Math.max(0, new Date(sendAt).getTime() - Date.now()) + 1500);
-    for (let attempt = 0; attempt < 10; attempt++) {
-      if (followedSend.current !== id) return; // undone
-      try {
-        const { status, error } = await getSendStatus(id);
-        if (followedSend.current !== id) return;
-        if (status === 'failed') return update({ status, error });
-        if (status === 'sent') {
-          update({ status });
-          setTimeout(() => setOutgoing(prev => (prev?.id === id ? null : prev)), 4000);
-          // the server syncs the account after sending, bringing in the sent copy
-          setTimeout(() => reloadMessages().catch(() => {}), 4000);
-          return;
-        }
-      } catch {
-        // checked again below
-      }
-      await delay(2000);
-    }
-    update({ status: 'unknown' });
-  }
-
-  async function handleUndoSend() {
-    const { id, draft: unsent, chat } = outgoing;
-    // asked before cancelling, so the undone email can't be lost
-    if (draft && draftHasContent(draft) && !window.confirm('Undo brings that email back in place of the one you are writing. Continue?')) return;
-    try {
-      await cancelSend(id);
-    } catch (err) {
-      setOutgoing(prev => (prev?.id === id ? { ...prev, undoError: err.message } : prev));
-      return;
-    }
-    followedSend.current = null;
-    setOutgoing(null);
-    openDraft(unsent, chat, true);
-  }
-
-  // "Open email" on a send that failed: back to the writing screen, with the reason
-  function handleReopenFailedSend() {
-    const { draft: unsent, chat, error } = outgoing;
-    if (openDraft({ ...unsent, error }, chat)) setOutgoing(null);
-  }
-
-  // The assistant beside the writing screen. It gets the draft as it stands,
-  // and returns a suggested draft only when asked for one.
-  async function handleAskAboutDraft(question) {
-    if (!draft) return;
-    const session = draftSession.current;
-    setDraftChatLoading(true);
-    setDraftChatError(null);
-    setDraftChatPending({ question, steps: [], text: '' });
-    try {
-      const history = draftChat.map(({ question: q, answer }) => ({ question: q, answer }));
-      const result = await askAssistant(question, history, {
-        draft: {
-          mode: draft.mode,
-          from: accounts.find(a => a.id === draft.accountId)?.email_address || '',
-          to: draft.to,
-          cc: draft.showCcBcc ? draft.cc : '',
-          subject: draft.subject,
-          body: draft.body,
-          replyToMessageId: draft.originalMessageId,
-        },
-        onProgress: event => {
-          if (session === draftSession.current) setDraftChatPending(prev => applyProgress(prev, event));
-        },
-      });
-      if (session !== draftSession.current) return;
-      setDraftChat(prev => [...prev, { question, ...result }]);
-      if (result.createdNotes?.length) await refreshNotes();
-    } catch (err) {
-      if (session === draftSession.current) setDraftChatError(err.message);
-    } finally {
-      if (session === draftSession.current) {
-        setDraftChatLoading(false);
-        setDraftChatPending(null);
-      }
-      refreshStatus();
-    }
-  }
-
-  // Puts the assistant's draft into the email. What the user had before is
-  // kept (from before the first AI draft), so Undo always returns to their own text.
-  function handleUseAiDraft(exchangeIndex) {
-    const suggestion = draftChat[exchangeIndex]?.draft;
-    if (!suggestion || !draft) return;
-    setDraft(prev => ({
-      ...prev,
-      body: suggestion.body,
-      subject: suggestion.subject || prev.subject,
-      aiPrevious: prev.aiPrevious || { body: prev.body, subject: prev.subject },
-      error: null,
-    }));
-    setDraftChat(prev => prev.map((exchange, i) => ({ ...exchange, draftUsed: i === exchangeIndex })));
-    showDraft();
-  }
-
-  function handleUndoAiDraft() {
-    setDraft(prev => (prev?.aiPrevious ? { ...prev, ...prev.aiPrevious, aiPrevious: null } : prev));
-    setDraftChat(prev => prev.map(exchange => ({ ...exchange, draftUsed: false })));
-  }
-
-  async function handleUndoDraftChatNote(exchangeIndex, noteId) {
-    await deleteNote(noteId);
-    setDraftChat(prev => prev.map((exchange, i) => (i !== exchangeIndex ? exchange : {
-      ...exchange,
-      createdNotes: exchange.createdNotes.map(note => (note.id === noteId ? { ...note, undone: true } : note)),
-    })));
-    await refreshNotes();
-  }
-
-  // closing the tab or app with an unsent draft asks first
-  const draftAtRisk = Boolean(draft && draftHasContent(draft));
-  useEffect(() => {
-    if (!draftAtRisk) return;
-    const warn = e => e.preventDefault();
-    window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
-  }, [draftAtRisk]);
-
-  // ---------- notes ----------
-  // Every change goes to the server, then the list is reloaded from it, so the
-  // app always shows what's saved (notes are few, so reloading is cheap).
-
-  async function refreshNotes() {
-    setNotes(await getNotes());
+    accounts.refresh(); // show it in the panel before its first sync finishes
+    sync.sync();
   }
 
   // Saving from the Notes box or from "+ Note" on an email (where addons already
@@ -796,254 +105,155 @@ function App({ userEmail, onSignOut }) {
   // clear it was made and any mistakes are visible straight away. (Going back to
   // the email later reloads it, so its new sticky note shows there too.)
   async function handleCreateNote(body, addons) {
-    const { id } = await createNote(body, addons);
-    await refreshNotes();
-    openNote(id);
+    nav.openNote(await notes.create(body, addons));
   }
 
-  // AI save: the AI rewrites the text and adds more add-ons. Anything it wants
-  // the user to know (e.g. an email it couldn't find) shows on the opened note.
   async function handleAiSaveNote(body, addons) {
-    try {
-      const { id, message } = await aiSaveNote(body, addons);
-      await refreshNotes();
-      setAiHeadsUp(message ? { noteId: id, message } : null);
-      openNote(id);
-    } finally {
-      refreshStatus();
-    }
-  }
-
-  async function handleSaveNoteBody(noteId, body) {
-    await updateNote(noteId, { body });
-    setNotes(prev => prev.map(note => (note.id === noteId ? { ...note, body } : note)));
-  }
-
-  // Dragging: moves the note on screen straight away, then saves the new position.
-  async function handleMoveNote(noteId, position) {
-    setNotes(prev => prev
-      .map(note => (note.id === noteId ? { ...note, position } : note))
-      .sort((a, b) => a.position - b.position));
-    try {
-      await updateNote(noteId, { position });
-    } catch (err) {
-      console.error(err);
-      setNotice({ type: 'error', text: "Couldn't save the new order, try again" });
-      refreshNotes().catch(() => {});
-    }
-  }
-
-  // Applies the Organize suggestions the user kept, through the same routes as
-  // doing each by hand. order: { noteIds } in their new order, or null.
-  async function handleApplyOrganizing(changes, order) {
-    const byId = new Map(notes.map(note => [note.id, note]));
-    try {
-      for (const change of changes) {
-        const note = byId.get(change.noteId);
-        if (!note) continue;
-        if (change.action === 'pin') await addNoteAddon(note.id, { kind: 'pin' });
-        if (change.action === 'unpin' && note.pin) await removeNoteAddon(note.pin.id);
-        if (change.action === 'mark_done' && note.reminder) await updateNoteAddon(note.reminder.id, { done: true });
-        if (change.action === 'link') await addNoteAddon(note.id, { kind: 'note_link', noteId: change.otherNoteId });
-      }
-      if (order) {
-        // positions 0, 1, 2... in the new order, saving only the ones that change
-        for (const [index, noteId] of order.noteIds.entries()) {
-          if (byId.get(noteId)?.position !== index) await updateNote(noteId, { position: index });
-        }
-      }
-    } finally {
-      await refreshNotes();
-    }
+    nav.openNote(await notes.aiSave(body, addons));
   }
 
   async function handleDeleteNote(noteId) {
-    await deleteNote(noteId);
-    setSelectedNoteId(null);
-    showListScreen();
-    await refreshNotes();
-  }
-
-  async function handleAddNoteAddon(noteId, addon) {
-    await addNoteAddon(noteId, addon);
-    await refreshNotes();
-  }
-
-  async function handleUpdateNoteAddon(addonId, changes) {
-    await updateNoteAddon(addonId, changes);
-    await refreshNotes();
-  }
-
-  async function handleRemoveNoteAddon(addonId) {
-    await removeNoteAddon(addonId);
-    await refreshNotes();
+    await notes.remove(noteId, () => {
+      nav.closeNote();
+      nav.showListScreen();
+    });
   }
 
   const noteActions = {
-    onSaveBody: handleSaveNoteBody,
+    onSaveBody: notes.saveBody,
     onDelete: handleDeleteNote,
-    onAddAddon: handleAddNoteAddon,
-    onUpdateAddon: handleUpdateNoteAddon,
-    onRemoveAddon: handleRemoveNoteAddon,
-    onOpenNote: openNote,
+    onAddAddon: notes.addAddon,
+    onUpdateAddon: notes.updateAddon,
+    onRemoveAddon: notes.removeAddon,
+    onOpenNote: nav.openNote,
     onCreate: handleCreateNote,
     onAiCreate: handleAiSaveNote,
   };
 
-  async function handleAsk(question) {
-    // the email on screen when asking is "this email" for the assistant
-    const openMessageId = selectedMessageId;
-    openChat(); // the answer shows in the chat
-    setChatLoading(true);
-    setChatError(null);
-    setChatPending({ question, steps: [], text: '' });
-    try {
-      // earlier exchanges go along so follow-up questions make sense
-      const history = chatHistory.map(({ question: q, answer }) => ({ question: q, answer }));
-      const result = await askAssistant(question, history, {
-        openMessageId,
-        onProgress: event => setChatPending(prev => applyProgress(prev, event)),
-      });
-      setChatHistory(prev => [...prev, { question, ...result }]);
-      if (result.createdNotes?.length) await refreshNotes();
-    } catch (err) {
-      setChatError(err.message);
-    } finally {
-      setChatLoading(false);
-      setChatPending(null);
-      refreshStatus();
-    }
+  // the answer shows in the chat; the email on screen is "this email" for the assistant
+  function handleAsk(question) {
+    const openMessageId = nav.selectedMessageId;
+    nav.openChat();
+    chat.ask(question, openMessageId);
   }
 
-  // Undo on a note the assistant created: deletes it and marks its card as undone.
-  async function handleUndoCreatedNote(exchangeIndex, noteId) {
-    await deleteNote(noteId);
-    if (selectedNoteId === noteId) setSelectedNoteId(null);
-    setChatHistory(prev => prev.map((exchange, i) => (i !== exchangeIndex ? exchange : {
-      ...exchange,
-      createdNotes: exchange.createdNotes.map(note => (note.id === noteId ? { ...note, undone: true } : note)),
-    })));
-    await refreshNotes();
+  // search results are emails, so they show on the Inbox tab
+  function handleSearch(query) {
+    nav.setTab('inbox');
+    search.run(query);
   }
 
-  const selectedAccount = accounts.find(a => a.id === selectedMessage?.account_id);
-  // temp address -> its current color, read by the list and the open email so recoloring shows at once
-  const tempColors = new Map((tempAddresses?.addresses || []).map(a => [a.address, a.color]));
+  const selectedNote = notes.notes.find(note => note.id === nav.selectedNoteId) || null;
+  const selectedAccount = accounts.accounts.find(a => a.id === openEmail.message?.account_id);
+  const dueCount = dueReminderCount(notes.notes, now);
 
   return (
-    <div className={`app phone-shows-${phoneScreen}`}>
+    <div className={`app phone-shows-${nav.phoneScreen}`}>
       <Sidebar
         creditsBanner={(
           <CreditsBanner
-            problems={providerProblems}
-            hiddenSince={hiddenProblems}
-            onHide={problem => setHiddenProblems(prev => ({ ...prev, [problem.provider]: problem.since }))}
+            problems={status.problems}
+            hiddenSince={status.hidden}
+            onHide={status.hide}
           />
         )}
         // while writing an email, the ask box asks that email's assistant
-        onAsk={draft ? handleAskAboutDraft : handleAsk}
+        onAsk={draft ? compose.ask : handleAsk}
         focusAskBox={launchAction === 'ask'}
         focusNoteBox={launchAction === 'new-note'}
-        chatCount={chatHistory.length}
-        onOpenChat={openChat}
-        asking={draft ? draftChatLoading : chatLoading}
-        lastSyncedAt={oldestSyncTime(accounts)}
-        onSync={handleSync}
-        syncing={syncing}
-        messages={messages}
-        tempColors={tempColors}
-        pinned={pinned}
-        selectedId={selectedMessageId}
-        onSelect={openMessage}
-        hasMore={messages.length < total}
-        loadingMore={loadingMore}
-        onLoadMore={loadMore}
-        total={total}
+        chatCount={chat.history.length}
+        onOpenChat={nav.openChat}
+        asking={draft ? compose.chatLoading : chat.loading}
+        lastSyncedAt={oldestSyncTime(accounts.accounts)}
+        onSync={sync.sync}
+        syncing={sync.syncing}
+        messages={list.messages}
+        tempColors={temp.colors}
+        pinned={list.pinned}
+        selectedId={nav.selectedMessageId}
+        onSelect={nav.openMessage}
+        hasMore={list.messages.length < list.total}
+        loadingMore={list.loadingMore}
+        onLoadMore={list.loadMore}
+        total={list.total}
         notice={notice}
         onDismissNotice={() => setNotice(null)}
-        accounts={accounts}
-        onToggleAccount={handleToggleAccount}
-        onChangeAccountColor={handleChangeAccountColor}
+        accounts={accounts.accounts}
+        onToggleAccount={accounts.toggle}
+        onChangeAccountColor={accounts.changeColor}
         onAccountConnected={handleAccountConnected}
         userEmail={userEmail}
         onSignOut={onSignOut}
-        search={search}
-        // search results are emails, so they show on the Inbox tab
-        onSearch={query => { setTab('inbox'); handleSearch(query); }}
-        onClearSearch={() => setSearch(null)}
-        onLoadMoreSearch={loadMoreSearch}
-        tab={tab}
-        onTabChange={setTab}
-        folder={folder}
-        onFolderChange={changeFolder}
-        dueCount={dueReminderCount(notes, now)}
-        notes={notes}
+        search={search.search}
+        onSearch={handleSearch}
+        onClearSearch={search.clear}
+        onLoadMoreSearch={search.loadMore}
+        tab={nav.tab}
+        onTabChange={nav.setTab}
+        folder={list.folder}
+        onFolderChange={list.changeFolder}
+        dueCount={dueCount}
+        notes={notes.notes}
         now={now}
-        selectedNoteId={selectedNoteId}
-        onSelectNote={openNote}
+        selectedNoteId={nav.selectedNoteId}
+        onSelectNote={nav.openNote}
         onCreateNote={handleCreateNote}
         onAiCreateNote={handleAiSaveNote}
-        onMoveNote={handleMoveNote}
-        onSuggestOrganizing={async () => {
-          try {
-            return await suggestOrganizing();
-          } finally {
-            refreshStatus();
-          }
-        }}
-        onApplyOrganizing={handleApplyOrganizing}
-        onNewEmail={handleNewEmail}
+        onMoveNote={notes.move}
+        onSuggestOrganizing={notes.suggest}
+        onApplyOrganizing={notes.applyOrganizing}
+        onNewEmail={compose.newEmail}
         tempAddresses={{
-          temp: tempAddresses,
+          temp: temp.temp,
           now,
-          onCreate: handleCreateTempAddress,
-          onExtend: handleExtendTempAddress,
-          onToggle: handleToggleTempAddress,
-          onChangeColor: handleChangeTempColor,
-          onDelete: handleDeleteTempAddress,
+          onCreate: temp.create,
+          onExtend: temp.extend,
+          onToggle: temp.toggle,
+          onChangeColor: temp.changeColor,
+          onDelete: temp.remove,
         }}
         drafting={draft && {
           title: DRAFT_TITLES[draft.mode],
-          onBackToDraft: showDraft,
-          onDiscard: handleDiscardDraft,
+          onBackToDraft: nav.showDraft,
+          onDiscard: compose.discard,
           chat: (
             <DraftAssistant
-              history={draftChat}
-              loading={draftChatLoading}
-              pending={draftChatPending}
-              error={draftChatError}
-              onUseDraft={handleUseAiDraft}
-              onOpenMessage={openMessage}
-              onOpenNote={openNote}
-              onUndoCreatedNote={handleUndoDraftChatNote}
+              history={compose.chat}
+              loading={compose.chatLoading}
+              pending={compose.chatPending}
+              error={compose.chatError}
+              onUseDraft={compose.applyAiDraft}
+              onOpenMessage={nav.openMessage}
+              onOpenNote={nav.openNote}
+              onUndoCreatedNote={compose.undoChatNote}
             />
           ),
         }}
       />
       <MainPane
-        selectedMessageId={selectedMessageId}
-        selectedMessage={selectedMessage}
+        selectedMessageId={nav.selectedMessageId}
+        selectedMessage={openEmail.message}
         selectedAccount={selectedAccount}
-        tempColors={tempColors}
-        messageLoading={messageLoading}
-        messageError={messageError}
-        chatHistory={chatHistory}
-        chatLoading={chatLoading}
-        chatPending={chatPending}
-        chatError={chatError}
+        tempColors={temp.colors}
+        messageLoading={openEmail.loading}
+        messageError={openEmail.error}
+        chatHistory={chat.history}
+        chatLoading={chat.loading}
+        chatPending={chat.pending}
+        chatError={chat.error}
         selectedNote={selectedNote}
-        notes={notes}
+        notes={notes.notes}
         now={now}
         noteActions={noteActions}
-        aiHeadsUp={aiHeadsUp}
-        onDismissAiHeadsUp={() => setAiHeadsUp(null)}
-        onOpenMessage={openMessage}
-        onUndoCreatedNote={handleUndoCreatedNote}
-        onCloseMessage={() => setSelectedMessageId(null)}
-        onBackToList={showListScreen}
+        aiHeadsUp={notes.aiHeadsUp}
+        onDismissAiHeadsUp={notes.dismissAiHeadsUp}
+        onOpenMessage={nav.openMessage}
+        onUndoCreatedNote={chat.undoCreatedNote}
+        onCloseMessage={nav.closeMessage}
+        onBackToList={nav.showListScreen}
         // while writing, the list screen is the email's assistant
-        backLabel={draft ? 'Assistant' : tab === 'notes' ? 'Notes' : 'Inbox'}
-        onReply={handleReply}
+        backLabel={draft ? 'Assistant' : nav.tab === 'notes' ? 'Notes' : 'Inbox'}
+        onReply={compose.reply}
         // Phone: emails, notes and answers keep the list screen's top (the ask
         // box and Inbox | Notes), so moving between screens doesn't change the
         // layout; the tabs lead back to the lists. Not while writing, which
@@ -1052,37 +262,37 @@ function App({ userEmail, onSignOut }) {
           <div className="phone-header phone-only">
             <AskBar
               onAsk={handleAsk}
-              onSearch={query => { setTab('inbox'); handleSearch(query); showListScreen(); }}
-              asking={chatLoading}
-              topAction={{ label: 'New email', onClick: handleNewEmail }}
+              onSearch={query => { handleSearch(query); nav.showListScreen(); }}
+              asking={chat.loading}
+              topAction={{ label: 'New email', onClick: compose.newEmail }}
             />
             <SidebarTabs
-              tab={tab}
-              onChange={next => { setTab(next); showListScreen(); }}
-              dueCount={dueReminderCount(notes, now)}
+              tab={nav.tab}
+              onChange={next => { nav.setTab(next); nav.showListScreen(); }}
+              dueCount={dueCount}
             />
           </div>
         )}
-        onTogglePin={handleTogglePin}
+        onTogglePin={openEmail.togglePin}
         compose={draft && {
           draft,
-          visible: draftVisible,
-          accounts,
-          sending,
-          onChange: updateDraft,
-          onSend: handleSendDraft,
-          onDiscard: handleDiscardDraft,
-          onUndoAiDraft: handleUndoAiDraft,
-          onShowAssistant: showListScreen,
-          onShow: showDraft,
+          visible: nav.draftVisible,
+          accounts: accounts.accounts,
+          sending: compose.sending,
+          onChange: compose.update,
+          onSend: compose.send,
+          onDiscard: compose.discard,
+          onUndoAiDraft: compose.undoAiDraft,
+          onShowAssistant: nav.showListScreen,
+          onShow: nav.showDraft,
         }}
       />
-      {outgoing && (
+      {compose.outgoing && (
         <SendingBar
-          outgoing={outgoing}
-          onUndo={handleUndoSend}
-          onOpenDraft={handleReopenFailedSend}
-          onDismiss={() => { followedSend.current = null; setOutgoing(null); }}
+          outgoing={compose.outgoing}
+          onUndo={compose.undoSend}
+          onOpenDraft={compose.reopenFailedSend}
+          onDismiss={compose.dismissOutgoing}
         />
       )}
     </div>
