@@ -98,6 +98,9 @@
 }
 
 .date {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
   font-family: $font-mono;
   font-size: 11px;
   color: $text-secondary;

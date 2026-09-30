@@ -1,6 +1,7 @@
 import { senderName, shortDate } from '../../format';
 import { splitAddresses } from '../compose/compose';
 import { preloadEmailHtml } from './useEmailHtml';
+import PaperclipIcon from '../../ui/PaperclipIcon';
 
 // How long the mouse rests on an email before its formatted version starts
 // loading, so sweeping across the list doesn't load every email passed over.
@@ -49,7 +50,10 @@ function MessageList({ messages, accountColors, tempColors, selectedId, onSelect
         >
           <div className="message-list-item-top">
             <span className="sender">{showRecipients ? recipientsLabel(m.to_recipients) : senderName(m.sender)}</span>
-            <span className="date">{shortDate(m.received_at)}</span>
+            <span className="date">
+              {m.has_files && <PaperclipIcon />}
+              {shortDate(m.received_at)}
+            </span>
           </div>
           <div className="subject">
             {m.temp_address && <span className="temp-chip" title={`Sent to ${m.temp_address.address}`}>Temp</span>}

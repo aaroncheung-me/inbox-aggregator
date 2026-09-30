@@ -32,6 +32,29 @@ async function visibleAccountIds(userId) {
 // also returns them as `pinned`, and the list below leaves them out.
 const LIST_COLUMNS = 'id, account_id, sender, to_recipients, subject, snippet, received_at, is_read, has_attachments, pinned_at';
 const MAX_PINNED = 50;
+// Images smaller than this are nearly always logos, banners or signature
+// pictures shown inside the email: on real mail, most "attachment" emails had
+// only these, up to 86 KB (IMAP counts the encoded size, about a third more
+// than Gmail does). Photos people attach are usually far bigger.
+const SMALL_IMAGE_BYTES = 100 * 1024;
+
+// Adds has_files to listed emails: whether they carry a file worth a paperclip
+// in the list, leaving out small images (see SMALL_IMAGE_BYTES).
+async function markFiles(messages) {
+  const ids = messages.filter(m => m.has_attachments).map(m => m.id);
+  let withFiles = new Set();
+  if (ids.length) {
+    const { data, error } = await supabase
+      .from('attachments')
+      .select('message_id, mime_type, size_bytes')
+      .in('message_id', ids);
+    if (error) throw error;
+    withFiles = new Set(data
+      .filter(a => !(a.mime_type || '').startsWith('image/') || (a.size_bytes || 0) >= SMALL_IMAGE_BYTES)
+      .map(a => a.message_id));
+  }
+  return messages.map(m => ({ ...m, has_files: withFiles.has(m.id) }));
+}
 
 router.get('/messages', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 25, 100);
@@ -77,8 +100,8 @@ router.get('/messages', async (req, res) => {
   if (list.error) throw list.error;
   if (pinned.error) throw pinned.error;
   res.json({
-    messages: await markTempMail(req.userId, list.data),
-    pinned: await markTempMail(req.userId, pinned.data),
+    messages: await markFiles(await markTempMail(req.userId, list.data)),
+    pinned: await markFiles(await markTempMail(req.userId, pinned.data)),
     total: list.count,
     limit,
     offset,
@@ -115,7 +138,7 @@ router.get('/messages/search', async (req, res) => {
   const marked = await markTempMail(req.userId, found.map(m => ({ ...m, ...recipients.get(m.id) })));
 
   res.json({
-    messages: marked,
+    messages: await markFiles(marked),
     hasMore: rows.length > limit,
     limit,
     offset,
