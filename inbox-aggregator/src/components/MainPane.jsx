@@ -94,6 +94,7 @@ function MainPane({
       <EmailDetail
         key={selectedMessageId}
         back={back}
+        messageId={selectedMessageId}
         message={selectedMessage}
         account={selectedAccount}
         tempColors={tempColors}

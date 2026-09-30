@@ -34,6 +34,28 @@ export async function getMessage(messageId) {
   return res.json();
 }
 
+// The email's formatted version: { html, inlinePartIds }. html is null for plain-text email.
+export async function getMessageHtml(messageId) {
+  const res = await apiFetch(`/messages/${messageId}/html`);
+  if (!res.ok) throw new Error("Couldn't load this email's formatting");
+  return res.json();
+}
+
+// Saves an attachment ({ id, filename }) to the device.
+export async function downloadAttachment(attachment) {
+  const res = await apiFetch(`/attachments/${attachment.id}`);
+  if (!res.ok) await failWith(res, 'Downloading the attachment failed');
+
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = attachment.filename || 'attachment';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+}
+
 export async function getAccounts() {
   const res = await apiFetch('/accounts');
   if (!res.ok) throw new Error('Failed to load accounts');

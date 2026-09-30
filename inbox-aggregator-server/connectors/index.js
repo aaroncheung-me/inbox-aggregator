@@ -9,6 +9,8 @@
 //     -> { messages, nextPageToken }
 //   downloadAttachment({ credentials, messageExternalId, attachmentExternalId, maxBytes })
 //     -> Buffer
+//   getHtml({ credentials, messageExternalId, maxHtmlBytes, maxInlineBytes })
+//     -> { html, inlineParts: [{ partId, cid, mimeType, content }] }   html is null for plain-text email
 //   getReplyHeaders({ credentials, messageExternalId })
 //     -> { messageId, references, replyTo }         what a reply to that message needs
 //   send({ credentials, mail, threadId })           mail: nodemailer message options

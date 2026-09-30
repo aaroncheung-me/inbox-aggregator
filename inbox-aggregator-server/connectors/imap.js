@@ -1,7 +1,7 @@
 const { ImapFlow } = require('imapflow');
 const { simpleParser } = require('mailparser');
 const nodemailer = require('nodemailer');
-const { htmlToText, makeSnippet } = require('../lib/text');
+const { htmlToText, makeSnippet, referencedCids, normalizeCid } = require('../lib/text');
 const { buildRawEmail } = require('../lib/mime');
 const { UserError } = require('../lib/errors');
 const { assertPublicHost } = require('../lib/hostCheck');
@@ -271,6 +271,48 @@ async function downloadAttachment({ credentials, messageExternalId, attachmentEx
   });
 }
 
+function findNodes(node, test, found = []) {
+  if (!node) return found;
+  if (!node.childNodes && test(node)) found.push(node);
+  for (const child of node.childNodes || []) findNodes(child, test, found);
+  return found;
+}
+
+async function downloadPart(client, uid, part, maxBytes) {
+  const { content } = await client.download(uid, part, { uid: true, maxBytes });
+  const chunks = [];
+  for await (const chunk of content) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+// The email's HTML plus the images it shows from inside the email (cid: links),
+// downloading only those parts, never the whole message with its attachments.
+// Returns { html: null } for a plain-text email.
+async function getHtml({ credentials, messageExternalId, maxHtmlBytes, maxInlineBytes }) {
+  return withStoredMessage(credentials, messageExternalId, async (client, uid) => {
+    const message = await client.fetchOne(uid, { bodyStructure: true }, { uid: true });
+    const [htmlNode] = findNodes(message?.bodyStructure, n => n.type === 'text/html' && n.disposition !== 'attachment');
+    if (!htmlNode || htmlNode.size > maxHtmlBytes) return { html: null, inlineParts: [] };
+
+    // download() converts text to UTF-8; a single-part message's body is part 1
+    const html = (await downloadPart(client, uid, htmlNode.part || '1', maxHtmlBytes)).toString('utf-8');
+
+    const wanted = referencedCids(html);
+    let budget = maxInlineBytes;
+    const images = findNodes(message.bodyStructure, n => {
+      if (!n.type?.startsWith('image/') || !n.id || !wanted.has(normalizeCid(n.id))) return false;
+      budget -= n.size ?? 0;
+      return budget >= 0;
+    });
+    // one at a time: an IMAP connection handles one download at once anyway
+    const inlineParts = [];
+    for (const n of images) {
+      inlineParts.push({ partId: n.part, cid: n.id, mimeType: n.type, content: await downloadPart(client, uid, n.part, maxInlineBytes) });
+    }
+    return { html, inlineParts };
+  });
+}
+
 // Permanently deletes stored messages from the mailbox, e.g. the emails an
 // expired temp address received. A folder renumbered since syncing is skipped
 // rather than risk deleting the wrong mail. Returns how many were deleted.
@@ -377,6 +419,7 @@ module.exports = {
   fetchNew,
   fetchPage,
   downloadAttachment,
+  getHtml,
   deleteMessages,
   getReplyHeaders,
   send,

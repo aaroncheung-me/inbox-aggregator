@@ -1,0 +1,115 @@
+import { useEffect, useMemo, useRef } from 'react';
+import DOMPurify from 'dompurify';
+
+// An email's formatted (HTML) version, shown the way mail apps do: in a frame
+// that can't run scripts, submit forms or reach the app, sized to its content
+// so the page scrolls as one. Wide emails (600px newsletters on a phone) are
+// scaled down to fit. It stays on white in dark mode too, since senders design
+// for white. loadImages false blocks images from the web (they tell senders
+// when an email is opened); images inside the email itself always show.
+
+// every link opens in a new tab, without telling the site where it came from
+DOMPurify.addHook('afterSanitizeAttributes', node => {
+  if (node.tagName === 'A' && node.hasAttribute('href')) {
+    node.setAttribute('target', '_blank');
+    node.setAttribute('rel', 'noopener noreferrer');
+  }
+});
+
+const MIN_SCALE = 0.4; // narrower than this would be unreadable, so it scrolls sideways instead
+
+// Before the email's own styles, so it can override them.
+const BASE_STYLE = `
+  html { background: #FFFFFF; color: #1A1A1A; overflow-y: hidden; }
+  body { margin: 0; padding: 16px; font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; overflow-wrap: break-word; }
+  img { max-width: 100%; height: auto; }
+  pre { white-space: pre-wrap; }
+`;
+
+function frameDocument(html, loadImages) {
+  // the whole document, so the email's own <head> styles and <body> colors survive
+  const root = DOMPurify.sanitize(html, {
+    WHOLE_DOCUMENT: true,
+    RETURN_DOM: true,
+    FORBID_TAGS: ['form', 'input', 'button', 'select', 'textarea'],
+    ADD_ATTR: ['target'],
+  });
+  // What the email may load. No scripts, frames or connections of any kind.
+  const images = loadImages ? 'data: https: http:' : 'data:';
+  const policy = `default-src 'none'; img-src ${images}; style-src 'unsafe-inline' https:; font-src https: data:`;
+  root.querySelector('head').insertAdjacentHTML('afterbegin', '<meta charset="utf-8">'
+    + `<meta http-equiv="Content-Security-Policy" content="${policy}">`
+    + `<style>${BASE_STYLE}</style>`);
+  return `<!doctype html>${root.outerHTML}`;
+}
+
+function EmailHtml({ html, loadImages = true }) {
+  const frameRef = useRef(null);
+  const srcDoc = useMemo(() => frameDocument(html, loadImages), [html, loadImages]);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    let contentObserver = null;
+    let waiting = 0;
+
+    // the frame as tall as the content (its size already reflects any scaling)
+    function fitHeight() {
+      const root = frame.contentDocument?.documentElement;
+      if (root) frame.style.height = `${Math.ceil(root.getBoundingClientRect().height)}px`;
+    }
+
+    // scale wide emails down to the frame's width, then fit the height
+    function fit() {
+      const root = frame.contentDocument?.documentElement;
+      if (!root) return;
+      root.style.zoom = '';
+      const scale = Math.max(MIN_SCALE, Math.min(1, frame.clientWidth / root.scrollWidth));
+      if (scale < 1) root.style.zoom = String(scale);
+      fitHeight();
+    }
+
+    // the new document replaces the frame's blank one; start watching it as soon
+    // as it's there, rather than waiting for every image to load
+    function watchWhenReady() {
+      const doc = frame.contentDocument;
+      if (doc?.body && doc.URL === 'about:srcdoc') {
+        fit();
+        contentObserver = new ResizeObserver(fitHeight);
+        contentObserver.observe(doc.body);
+      } else {
+        waiting = requestAnimationFrame(watchWhenReady);
+      }
+    }
+    watchWhenReady();
+
+    // images have loaded (so widths are final), or the frame changed width
+    let lastWidth = frame.clientWidth;
+    const frameObserver = new ResizeObserver(() => {
+      if (frame.clientWidth !== lastWidth) {
+        lastWidth = frame.clientWidth;
+        fit();
+      }
+    });
+    frameObserver.observe(frame);
+    frame.addEventListener('load', fit);
+
+    return () => {
+      cancelAnimationFrame(waiting);
+      contentObserver?.disconnect();
+      frameObserver.disconnect();
+      frame.removeEventListener('load', fit);
+    };
+  }, [srcDoc]);
+
+  return (
+    <iframe
+      ref={frameRef}
+      className="email-html"
+      title="Email content"
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+      srcDoc={srcDoc}
+    />
+  );
+}
+
+export default EmailHtml;

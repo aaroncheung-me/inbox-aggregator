@@ -1,5 +1,13 @@
 // Small display helpers shared by several components.
 
+// "84 KB", "3.1 MB"
+export function fileSize(bytes) {
+  if (bytes == null) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 // "synced 5m ago", "synced just now", "never synced"
 export function timeAgo(isoString) {
   if (!isoString) return 'never synced';

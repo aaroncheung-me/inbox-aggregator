@@ -2,17 +2,36 @@ import { useState } from 'react';
 import EmailStickyNotes from './EmailStickyNotes';
 import PaneBar from './PaneBar';
 import ActionMenu from './ActionMenu';
-import { timeLeft } from '../format';
+import { fileSize, timeLeft } from '../format';
+import { downloadAttachment } from '../api';
+import { useEmailHtml } from '../hooks/useEmailHtml';
 import Linkify from './Linkify';
+import EmailHtml from './EmailHtml';
 
 // One email in the main pane. Its actions sit in the top bar: on a phone,
 // Reply plus a More menu for the rest, since the full row doesn't fit.
-// back: the bar's back button(s), from MainPane.
+// back: the bar's back button(s), from MainPane. messageId: the email being
+// opened, known before its details arrive, so its formatted version loads alongside.
 // onReply(kind): kind is 'reply', 'replyAll' or 'forward'. onTogglePin pins or unpins it.
 // tempColors: address -> color of the temp addresses as the app has them now.
-function EmailDetail({ back, message, account, tempColors, loading, error, now, allNotes, onOpenNote, onCreateNote, onAiCreateNote, onReply, onTogglePin }) {
+function EmailDetail({ back, messageId, message, account, tempColors, loading, error, now, allNotes, onOpenNote, onCreateNote, onAiCreateNote, onReply, onTogglePin }) {
   const [writingNote, setWritingNote] = useState(false);
+  const [download, setDownload] = useState(null); // { id, error? } of the attachment being saved
   const ready = Boolean(message && !loading && !error);
+  const formatted = useEmailHtml(messageId);
+
+  async function save(attachment) {
+    setDownload({ id: attachment.id });
+    try {
+      await downloadAttachment(attachment);
+      setDownload(null);
+    } catch (err) {
+      setDownload({ id: attachment.id, error: err.message });
+    }
+  }
+
+  // images shown inside the email aren't listed again as attachments
+  const attachments = (message?.attachments || []).filter(a => !formatted.inlinePartIds.includes(a.external_id));
 
   let body;
   if (loading) body = <div className="email-detail">Loading...</div>;
@@ -62,14 +81,27 @@ function EmailDetail({ back, message, account, tempColors, loading, error, now, 
           <div className="meta-recipients">To: {message.to_recipients || '(nobody)'}</div>
           {message.cc_recipients && <div className="meta-recipients">Cc: {message.cc_recipients}</div>}
         </div>
-        {message.attachments?.length > 0 && (
+        {attachments.length > 0 && (
           <ul className="attachments">
-            {message.attachments.map(a => (
-              <li key={a.id}>{a.filename || '(unnamed attachment)'}</li>
+            {attachments.map(a => (
+              <li key={a.id}>
+                <button type="button" onClick={() => save(a)} disabled={download?.id === a.id && !download.error}>
+                  <span className="attachment-name">{a.filename || '(unnamed attachment)'}</span>
+                  <span className="attachment-size">{download?.id === a.id && !download.error ? 'Saving...' : fileSize(a.size_bytes)}</span>
+                </button>
+              </li>
             ))}
           </ul>
         )}
-        <div className="body"><Linkify text={message.body || message.snippet} /></div>
+        {download?.error && <p className="form-error">{download.error}</p>}
+        {formatted.html ? (
+          <EmailHtml html={formatted.html} />
+        ) : formatted.status === 'loading' ? (
+          <div className="email-html-loading">Loading email...</div>
+        ) : (
+          // a plain-text email, or the formatted version couldn't be loaded
+          <div className="body"><Linkify text={message.body || message.snippet} /></div>
+        )}
       </div>
     );
   }

@@ -1,5 +1,5 @@
 const { google } = require('googleapis');
-const { htmlToText } = require('../lib/text');
+const { htmlToText, referencedCids, normalizeCid, decodeText } = require('../lib/text');
 const { buildRawEmail, messageIds } = require('../lib/mime');
 const { UserError } = require('../lib/errors');
 
@@ -309,6 +309,55 @@ async function downloadAttachment({ credentials, messageExternalId, attachmentEx
   return Buffer.from(data.data, 'base64url');
 }
 
+function partHeader(part, name) {
+  return (part.headers || []).find(h => h.name.toLowerCase() === name)?.value ?? null;
+}
+
+function findParts(part, test, found = []) {
+  if (test(part)) found.push(part);
+  for (const child of part.parts || []) findParts(child, test, found);
+  return found;
+}
+
+// A part's decoded bytes: small ones come with the message, larger ones need their own request.
+async function partBytes(gmail, messageId, part) {
+  if (part.body?.data) return Buffer.from(part.body.data, 'base64url');
+  if (!part.body?.attachmentId) return Buffer.alloc(0);
+  const { data } = await gmail.users.messages.attachments.get({ userId: 'me', messageId, id: part.body.attachmentId });
+  return Buffer.from(data.data, 'base64url');
+}
+
+// The email's HTML plus the images it shows from inside the email (cid: links),
+// fetching only those it actually uses, up to maxInlineBytes in total.
+// Returns { html: null } for a plain-text email.
+async function getHtml({ credentials, messageExternalId, maxHtmlBytes, maxInlineBytes }) {
+  const gmail = gmailClient(credentials);
+  const { data: full } = await gmail.users.messages.get({ userId: 'me', id: messageExternalId, format: 'full' });
+
+  const [htmlPart] = findParts(full.payload, p => p.mimeType === 'text/html' && !p.filename);
+  if (!htmlPart || (htmlPart.body?.size ?? 0) > maxHtmlBytes) return { html: null, inlineParts: [] };
+
+  const charset = /charset="?([^";\s]+)/i.exec(partHeader(htmlPart, 'content-type') || '')?.[1];
+  const html = decodeText(await partBytes(gmail, messageExternalId, htmlPart), charset);
+
+  const wanted = referencedCids(html);
+  let budget = maxInlineBytes;
+  const images = findParts(full.payload, p => {
+    const cid = partHeader(p, 'content-id');
+    if (!p.mimeType?.startsWith('image/') || !cid || !wanted.has(normalizeCid(cid))) return false;
+    budget -= p.body?.size ?? 0;
+    return budget >= 0;
+  });
+  const inlineParts = await Promise.all(images.map(async p => ({
+    partId: p.partId,
+    cid: partHeader(p, 'content-id'),
+    mimeType: p.mimeType,
+    content: await partBytes(gmail, messageExternalId, p),
+  })));
+
+  return { html, inlineParts };
+}
+
 // ---------- sending ----------
 
 // The original's headers a reply needs: { messageId, references: [...], replyTo }.
@@ -359,6 +408,7 @@ async function send({ credentials, mail, threadId }) {
 module.exports = {
   provider: 'gmail',
   downloadAttachment,
+  getHtml,
   getReplyHeaders,
   send,
   getAuthUrl,

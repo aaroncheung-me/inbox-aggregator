@@ -2,8 +2,11 @@ const supabase = require('./supabase');
 const { getAccount, getCredentials } = require('./accounts');
 const { htmlToText } = require('./text');
 const { connectorFor } = require('../connectors');
+const { UserError } = require('./errors');
 
 const MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024;
+// Gmail's own limit for a received attachment
+const MAX_SAVE_BYTES = 25 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Claude's per-image limit
 const MAX_TEXT_CHARS = 20000; // ~5k tokens, keeps one attachment from dominating the cost
 // A PDF with less extractable text than this is probably a scan, so Claude gets the PDF itself.
@@ -91,4 +94,27 @@ async function readAttachment(userId, attachmentId) {
   return { ...base, kind: 'pdf', data: buffer.toString('base64') };
 }
 
-module.exports = { readAttachment };
+// The file itself, for saving from the app: { filename, mimeType, buffer }.
+// Returns null if the attachment doesn't exist or isn't this user's.
+async function downloadAttachmentFile(userId, attachmentId) {
+  const { data: attachment, error } = await supabase
+    .from('attachments')
+    .select('external_id, filename, mime_type, size_bytes, messages!inner(external_id, account_id)')
+    .eq('id', attachmentId)
+    .maybeSingle();
+  if (error) throw error;
+
+  const account = attachment && await getAccount(userId, attachment.messages.account_id);
+  if (!account) return null;
+  if (attachment.size_bytes > MAX_SAVE_BYTES) throw new UserError('This attachment is too large to download here');
+
+  const buffer = await connectorFor(account.provider).downloadAttachment({
+    credentials: await getCredentials(account),
+    messageExternalId: attachment.messages.external_id,
+    attachmentExternalId: attachment.external_id,
+    maxBytes: MAX_SAVE_BYTES,
+  });
+  return { filename: attachment.filename, mimeType: attachment.mime_type, buffer };
+}
+
+module.exports = { readAttachment, downloadAttachmentFile };

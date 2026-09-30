@@ -1178,13 +1178,36 @@ $pane-column: 680px;
     padding: 0;
     margin: (-$space-3) 0 $space-6;
 
-    li {
+    // each attachment saves to the device when clicked
+    button {
+      display: flex;
+      gap: $space-2;
+      align-items: baseline;
+      max-width: 100%;
       font-family: $font-mono;
       font-size: 12px;
       padding: $space-1 $space-2;
       border: 1px solid $border;
       border-radius: 4px;
       background: $surface;
+      color: $text-primary;
+      text-align: left;
+
+      &:hover:not(:disabled) {
+        border-color: $accent;
+      }
+
+      &:disabled {
+        cursor: default;
+      }
+    }
+
+    .attachment-name {
+      overflow-wrap: anywhere;
+    }
+
+    .attachment-size {
+      flex-shrink: 0;
       color: $text-secondary;
     }
   }
@@ -1194,6 +1217,27 @@ $pane-column: 680px;
     overflow-wrap: anywhere;
     line-height: 1.6;
     font-size: 14px;
+  }
+
+  // the formatted email's place while it loads
+  .email-html-loading {
+    padding: $space-4;
+    min-height: 120px;
+    border: 1px solid $border;
+    border-radius: 8px;
+    background: $surface;
+    color: $text-secondary;
+    font-size: 13px;
+  }
+
+  // the formatted email (EmailHtml), on white even in dark mode
+  .email-html {
+    display: block;
+    width: 100%;
+    min-height: 60px;
+    border: 1px solid $border;
+    border-radius: 8px;
+    background: #FFFFFF;
   }
 }
 

@@ -15,6 +15,8 @@ const {
 } = require('./lib/accounts');
 const { keywordSearch, parseSearchQuery } = require('./lib/search');
 const { askAssistant } = require('./lib/assistant');
+const { getEmailHtml } = require('./lib/emailHtml');
+const { downloadAttachmentFile } = require('./lib/attachments');
 const { aiSaveNote } = require('./lib/aiSave');
 const { suggestOrganizing } = require('./lib/organize');
 const { transcribe, TRANSCRIBE_TYPES } = require('./lib/transcribe');
@@ -344,7 +346,7 @@ app.get('/messages/:messageId', async (req, res) => {
     .from('messages')
     .select(`
       id, account_id, thread_id, sender, to_recipients, cc_recipients, subject, body, snippet,
-      received_at, labels, is_read, pinned_at, attachments(id, filename, mime_type, size_bytes)
+      received_at, labels, is_read, pinned_at, attachments(id, external_id, filename, mime_type, size_bytes)
     `)
     .eq('id', req.params.messageId)
     .maybeSingle();
@@ -407,6 +409,34 @@ app.get('/messages/:messageId/reply-info', async (req, res) => {
     res.json({ replyTo: null });
   }
 });
+
+// The email's formatted version, fetched from the mail provider as it's opened:
+// { html, inlinePartIds } (see lib/emailHtml.js). html is null for plain-text
+// email, and on failure the app keeps showing the stored plain text.
+app.get('/messages/:messageId/html', async (req, res) => {
+  try {
+    const result = await getEmailHtml(req.userId, req.params.messageId);
+    if (!result) return res.status(404).send('Message not found');
+    res.json(result);
+  } catch (err) {
+    console.error(`Fetching the formatted version of message ${req.params.messageId} failed:`, err.message);
+    res.status(502).json({ error: "Couldn't load this email's formatting" });
+  }
+});
+
+// The attachment's file, for saving.
+app.get('/attachments/:attachmentId', withUserErrors(async (req, res) => {
+  const file = await downloadAttachmentFile(req.userId, req.params.attachmentId);
+  if (!file) return res.status(404).send('Attachment not found');
+
+  const filename = file.filename || 'attachment';
+  res.set({
+    'Content-Type': file.mimeType || 'application/octet-stream',
+    // the ASCII name for old clients, the exact one (RFC 5987) for everything else
+    'Content-Disposition': `attachment; filename="${filename.replace(/[^\x20-\x7e]|["\\]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+  });
+  res.send(file.buffer);
+}));
 
 // ---------- temp addresses ----------
 // Throwaway addresses on the user's own domain, removed with their emails when
