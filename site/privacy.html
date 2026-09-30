@@ -39,8 +39,10 @@
   <ul>
     <li>To show your messages from all connected accounts in one inbox.</li>
     <li>To let you search your messages and ask questions about them.</li>
-    <li>To send the emails you write, including replies and forwards. An email waits briefly after you
-      press Send so it can be undone, and its content is removed from the app's database once it has been sent.</li>
+    <li>To send the emails you write, including replies and forwards, with any files you attach. An email
+      waits briefly after you press Send so it can be undone; its content is removed from the app's database,
+      and its attached files from the app's file storage, once it has been sent or undone. A forward's
+      original attachments are read from your mailbox when it is sent, and not stored.</li>
     <li>To make temporary email addresses on your own domain when you ask for one. Each forwards mail to your
       mailbox until it expires; then the address is removed and the emails it received are deleted.</li>
   </ul>
@@ -49,7 +51,8 @@
 
   <h2>Where the data is stored</h2>
   <ul>
-    <li>Messages are stored in a private database hosted by <a href="https://supabase.com/privacy">Supabase</a>.</li>
+    <li>Messages are stored in a private database hosted by <a href="https://supabase.com/privacy">Supabase</a>.
+      Files attached to an email being sent wait in private Supabase file storage until it is sent.</li>
     <li>Google sign-in tokens and email account passwords are encrypted before they are stored.</li>
   </ul>
 

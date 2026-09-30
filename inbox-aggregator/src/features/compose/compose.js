@@ -117,7 +117,9 @@ export function newDraft(accountId, signature = '') {
     quoted: '', // the original, added under the body when sending
     originalMessageId: null, // the email being replied to or forwarded
     aiPrevious: null, // what the body/subject were before an AI draft was used, for Undo
-    attachmentsLeftOut: 0, // forwarding doesn't carry attachments yet
+    // [{ key, name, size, type, file }] for files picked on this device, or
+    // [{ key, name, size, attachmentId }] for a forwarded original's
+    attachments: [],
     error: null,
   };
 }
@@ -133,7 +135,13 @@ export function draftFromMessage(kind, message, ownAddresses, replyTo = null, si
     return {
       ...draft,
       mode: 'forward',
-      attachmentsLeftOut: message.attachments?.length || 0,
+      // the original's attachments come along, and can be removed like any other
+      attachments: (message.attachments || []).map(a => ({
+        key: `original-${a.id}`,
+        name: a.filename || 'attachment',
+        size: a.size_bytes,
+        attachmentId: a.id,
+      })),
       subject: withPrefix(message.subject, 'Fwd:', /^(fwd?|fw):/i),
       quoted: [
         '---------- Forwarded message ----------',
@@ -174,7 +182,20 @@ export function fullBody(draft) {
   return `${draft.body.trimEnd()}\n\n${draft.quoted}`;
 }
 
-// An untouched signature on its own doesn't count as something written.
+// Everything attached to one email can add up to this much (Gmail's limit).
+export const MAX_ATTACHMENTS_BYTES = 25 * 1024 * 1024;
+
+export function attachmentsSize(draft) {
+  return draft.attachments.reduce((sum, a) => sum + (a.size || 0), 0);
+}
+
+// Files it picks up, for the attachments list (key: unique within the draft).
+export function attachmentsFromFiles(files) {
+  return [...files].map(file => ({ key: crypto.randomUUID(), name: file.name, size: file.size, type: file.type, file }));
+}
+
+// An untouched signature on its own doesn't count as something written; a
+// file attached here does (a forward's own attachments don't).
 export function draftHasContent(draft) {
-  return Boolean(writtenText(draft).trim() || (draft.mode === 'new' && (draft.subject.trim() || draft.to.trim())));
+  return Boolean(writtenText(draft).trim() || draft.attachments.some(a => a.file) || (draft.mode === 'new' && (draft.subject.trim() || draft.to.trim())));
 }

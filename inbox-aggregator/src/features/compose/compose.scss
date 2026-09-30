@@ -107,10 +107,69 @@
   color: $text-secondary;
 }
 
-.compose-note {
-  margin: 0;
-  font-size: 13px;
+// the files attached, as chips with a remove button, and their total
+.compose-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $space-2;
+
+  ul {
+    display: contents;
+    list-style: none;
+  }
+
+  li {
+    display: flex;
+    align-items: baseline;
+    gap: $space-2;
+    max-width: 100%;
+    padding: $space-1 $space-1 $space-1 $space-2;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $surface;
+    font-size: 13px;
+  }
+
+  .attachment-name {
+    overflow-wrap: anywhere;
+  }
+
+  .attachment-size {
+    flex-shrink: 0;
+    color: $text-secondary;
+    font-size: 12px;
+  }
+
+  button {
+    flex-shrink: 0;
+    padding: 0 $space-1;
+    border: none;
+    background: none;
+    color: $text-secondary;
+    font-size: 16px;
+    line-height: 1;
+
+    &:hover:not(:disabled) {
+      color: $danger;
+    }
+  }
+}
+
+.compose-attachments-total {
+  font-size: 12px;
   color: $text-secondary;
+
+  &.too-big {
+    color: $danger;
+  }
+}
+
+// files being dragged over the writing screen
+.compose-dropping {
+  outline: 2px dashed $accent;
+  outline-offset: -8px;
+  background: $accent-soft;
 }
 
 // ---------- the assistant beside the writing screen ----------

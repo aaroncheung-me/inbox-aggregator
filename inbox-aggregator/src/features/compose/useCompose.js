@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { askAssistant, deleteNote, getReplyInfo, sendEmail, getSendStatus, cancelSend } from '../../api';
+import { askAssistant, deleteNote, getReplyInfo, sendEmail, getSendStatus, cancelSend, uploadAttachment } from '../../api';
 import { applyProgress, markNoteUndone } from '../assistant/useChat';
-import { newDraft, draftFromMessage, fullBody, draftHasContent, withAccount, withSignature } from './compose';
+import {
+  newDraft,
+  draftFromMessage,
+  fullBody,
+  draftHasContent,
+  withAccount,
+  withSignature,
+  attachmentsFromFiles,
+  attachmentsSize,
+  MAX_ATTACHMENTS_BYTES,
+} from './compose';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -89,6 +99,18 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
     });
   }
 
+  // files: a FileList or array, from the Attach button or dropped on the page.
+  // Read straight away: a FileList empties when its file picker is reset.
+  function addFiles(files) {
+    const added = attachmentsFromFiles(files || []);
+    if (!added.length) return;
+    setDraft(prev => (prev ? { ...prev, attachments: [...prev.attachments, ...added], error: null } : prev));
+  }
+
+  function removeAttachment(key) {
+    setDraft(prev => (prev ? { ...prev, attachments: prev.attachments.filter(a => a.key !== key), error: null } : prev));
+  }
+
   // On a phone this always lands on the list, whichever of the draft's two
   // screens (the email or its assistant) it was discarded from.
   function discard() {
@@ -100,9 +122,22 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
   async function send() {
     if (!draft || sending) return;
     const sent = draft;
+    if (attachmentsSize(sent) > MAX_ATTACHMENTS_BYTES) {
+      setDraft(prev => (prev ? { ...prev, error: 'Attachments can add up to 25 MB. Remove some to send.' } : prev));
+      return;
+    }
     setSending(true);
     try {
+      // files picked here are uploaded first, one at a time; a forward's own
+      // attachments are fetched by the server from the mailbox
+      const uploads = [];
+      for (const a of sent.attachments.filter(a => a.file)) {
+        const { uploadId } = await uploadAttachment(a.file);
+        uploads.push({ uploadId, filename: a.name, mimeType: a.type || 'application/octet-stream', size: a.size });
+      }
       const { id, sendAt } = await sendEmail({
+        attachments: uploads,
+        forwardedAttachmentIds: sent.attachments.filter(a => a.attachmentId).map(a => a.attachmentId),
         accountId: sent.accountId,
         to: sent.to,
         cc: sent.showCcBcc ? sent.cc : '',
@@ -261,6 +296,8 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
     newEmail,
     reply,
     update,
+    addFiles,
+    removeAttachment,
     discard,
     send,
     undoSend,

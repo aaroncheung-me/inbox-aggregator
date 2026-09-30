@@ -1,7 +1,12 @@
-import { useId } from 'react';
-import { DRAFT_TITLES } from './compose';
+import { useEffect, useId, useRef, useState } from 'react';
+import { DRAFT_TITLES, MAX_ATTACHMENTS_BYTES, attachmentsSize } from './compose';
+import { fileSize } from '../../format';
 import PaneBar from '../../ui/PaneBar';
 import Linkify from '../../ui/Linkify';
+
+function hasFiles(e) {
+  return [...(e.dataTransfer?.types || [])].includes('Files');
+}
 
 // The writing screen, in the main pane. Plain text only for now.
 // draft: see newDraft in compose.js. onChange(changes) merges into it.
@@ -9,8 +14,50 @@ import Linkify from '../../ui/Linkify';
 // bar has "Back to email" in the same spot), and Discard sits far right, as on
 // that screen. On desktop Discard is at the top of the sidebar instead.
 // Only Send or Ctrl+Enter sends; Enter in a field doesn't.
-function ComposeView({ draft, accounts, sending, onChange, onSend, onDiscard, onUndoAiDraft, onShowAssistant }) {
+// Files are attached with Attach or by dropping them anywhere on the page
+// (onAddFiles), and listed as chips under the fields (onRemoveAttachment(key)).
+function ComposeView({ draft, accounts, sending, onChange, onSend, onDiscard, onUndoAiDraft, onShowAssistant, onAddFiles, onRemoveAttachment }) {
   const id = useId();
+  const fileInput = useRef(null);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0); // entering a child fires dragenter again before dragleave
+  const total = attachmentsSize(draft);
+  const tooBig = total > MAX_ATTACHMENTS_BYTES;
+
+  // A file dropped outside the page would make the browser open it and leave
+  // the email, so while writing, stray drops do nothing.
+  useEffect(() => {
+    const ignore = e => { if (hasFiles(e)) e.preventDefault(); };
+    window.addEventListener('dragover', ignore);
+    window.addEventListener('drop', ignore);
+    return () => {
+      window.removeEventListener('dragover', ignore);
+      window.removeEventListener('drop', ignore);
+    };
+  }, []);
+
+  const dropTarget = {
+    onDragEnter: e => {
+      if (!hasFiles(e)) return;
+      dragDepth.current++;
+      setDragging(true);
+    },
+    onDragOver: e => {
+      if (hasFiles(e)) e.preventDefault();
+    },
+    onDragLeave: e => {
+      if (!hasFiles(e)) return;
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (!dragDepth.current) setDragging(false);
+    },
+    onDrop: e => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDragging(false);
+      onAddFiles(e.dataTransfer.files);
+    },
+  };
   const field = name => ({
     id: `${id}-${name}`,
     value: draft[name],
@@ -30,10 +77,21 @@ function ComposeView({ draft, accounts, sending, onChange, onSend, onDiscard, on
         left={<button className="btn btn-ghost btn-small phone-only" onClick={onShowAssistant}>Assistant</button>}
         title={DRAFT_TITLES[draft.mode]}
       >
+        <button className="btn btn-ghost btn-small" onClick={() => fileInput.current.click()} disabled={sending}>Attach</button>
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          hidden
+          onChange={e => {
+            onAddFiles([...e.target.files]); // copied first: resetting the picker empties its list
+            e.target.value = ''; // so the same file can be picked again after removing it
+          }}
+        />
         <button className="btn btn-small" onClick={onSend} disabled={sending}>{sending ? 'Sending...' : 'Send'}</button>
         <button className="btn btn-ghost btn-small phone-only" onClick={onDiscard}>Discard</button>
       </PaneBar>
-      <div className="pane-body">
+      <div className={`pane-body${dragging ? ' compose-dropping' : ''}`} {...dropTarget}>
         <div className="compose" onKeyDown={handleKeyDown}>
           {draft.error && <p className="form-error">{draft.error}</p>}
 
@@ -75,6 +133,23 @@ function ComposeView({ draft, accounts, sending, onChange, onSend, onDiscard, on
             </div>
           </div>
 
+          {draft.attachments.length > 0 && (
+            <div className="compose-attachments">
+              <ul>
+                {draft.attachments.map(a => (
+                  <li key={a.key}>
+                    <span className="attachment-name">{a.name}</span>
+                    <span className="attachment-size">{fileSize(a.size)}</span>
+                    <button type="button" aria-label={`Remove ${a.name}`} onClick={() => onRemoveAttachment(a.key)} disabled={sending}>×</button>
+                  </li>
+                ))}
+              </ul>
+              <span className={`compose-attachments-total${tooBig ? ' too-big' : ''}`}>
+                {fileSize(total)} of 25 MB{tooBig && ': remove some to send'}
+              </span>
+            </div>
+          )}
+
           {draft.aiPrevious && (
             <div className="compose-ai">
               <span><span className="ai-tag">AI</span> The assistant wrote this draft.</span>
@@ -97,14 +172,10 @@ function ComposeView({ draft, accounts, sending, onChange, onSend, onDiscard, on
               <div className="compose-quoted"><Linkify text={draft.quoted} /></div>
             </details>
           ))}
-          {draft.attachmentsLeftOut > 0 && (
-            <p className="compose-note">
-              The original's {draft.attachmentsLeftOut === 1 ? 'attachment is' : `${draft.attachmentsLeftOut} attachments are`} not
-              included: forwarding attachments isn't supported yet.
-            </p>
-          )}
 
-          <p className="compose-hint desktop-only">Ctrl+Enter sends. After sending, you can undo for 15 seconds.</p>
+          <p className="compose-hint desktop-only">
+            Ctrl+Enter sends. After sending, you can undo for 15 seconds. Drop files anywhere here to attach them.
+          </p>
         </div>
       </div>
     </>

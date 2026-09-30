@@ -19,6 +19,7 @@ const MAX_LIST_PAGES = 10; // cap for a full scan — older history comes from b
 const FETCH_BATCH_SIZE = 3;
 const FETCH_BATCH_PAUSE_MS = 800; // Gmail's quota is per-minute, so steady pacing beats burst speed
 const MAX_BODY_CHARS = 5000;
+const INLINE_SEND_BYTES = 3 * 1024 * 1024; // base64 makes it a third bigger, still under Gmail's 5 MB
 
 // ---------- auth ----------
 
@@ -400,10 +401,12 @@ async function send({ credentials, mail, threadId }) {
   const raw = await buildRawEmail(rest, { keepBcc: true });
 
   try {
-    await gmailClient(credentials).users.messages.send({
-      userId: 'me',
-      requestBody: { raw: raw.toString('base64url'), ...(threadId && { threadId }) },
-    });
+    // Gmail takes up to 5 MB in the request itself; bigger emails (attachments)
+    // go through its upload endpoint instead, which takes up to 35 MB.
+    const request = raw.length < INLINE_SEND_BYTES
+      ? { requestBody: { raw: raw.toString('base64url'), ...(threadId && { threadId }) } }
+      : { requestBody: threadId ? { threadId } : {}, media: { mimeType: 'message/rfc822', body: raw } };
+    await gmailClient(credentials).users.messages.send({ userId: 'me', ...request });
   } catch (err) {
     if (isMissingSendPermission(err)) {
       throw new UserError(`${from} was connected before sending was added. Connect it again (Add account, Gmail) to allow sending.`);

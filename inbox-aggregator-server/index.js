@@ -7,6 +7,7 @@ const { getKey } = require('./lib/crypto');
 const { listAllAccounts, saveConnectedAccount } = require('./lib/accounts');
 const { syncAccount } = require('./lib/sync');
 const { sendDue } = require('./lib/outbox');
+const { removeLeftoverUploads } = require('./lib/outboxFiles');
 const { expireTempAddresses } = require('./lib/tempAddresses');
 const { requireUser, readConnectState } = require('./lib/auth');
 const gmail = require('./connectors/gmail');
@@ -79,6 +80,7 @@ app.post('/cron/sync', (req, res) => {
   // catches any email left waiting by a server restart
   sendDue().catch(err => console.error('Sending overdue email failed:', err));
   expireTempAddresses().catch(err => console.error('Expiring temp addresses failed:', err));
+  removeLeftoverUploads().catch(err => console.error('Removing leftover attachment uploads failed:', err.message));
   // still a success for the scheduler: the previous run is doing the work
   if (backgroundSyncRunning) return res.status(202).json({ started: false, reason: 'previous run still going' });
 
@@ -127,6 +129,8 @@ app.use(require('./routes/assistant'));
 // Express 5 sends errors thrown in async routes here. It needs all four
 // arguments, unused `next` included, to be treated as an error handler.
 app.use((err, req, res, next) => {
+  // a request body over its route's limit (an attachment over 25 MB)
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'That file is too large, attachments can be 25 MB at most' });
   console.error(err);
   res.status(500).send('Something went wrong, check the server terminal');
 });

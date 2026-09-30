@@ -12,7 +12,7 @@ import PaneBar from '../ui/PaneBar';
 // noteActions: { onSaveBody, onDelete, onAddAddon, onUpdateAddon, onRemoveAddon, onOpenNote, onCreate, onAiCreate }
 // aiHeadsUp: { noteId, message } from the last AI save, shown on that note.
 // compose: the email being written, or null: { draft, visible, accounts, sending,
-//   onChange, onSend, onDiscard, onUndoAiDraft, onShowAssistant, onShow }.
+//   onChange, onSend, onDiscard, onUndoAiDraft, onShowAssistant, onShow, onAddFiles, onRemoveAttachment }.
 function MainPane({
   selectedMessageId,
   selectedMessage,
@@ -73,6 +73,8 @@ function MainPane({
         onDiscard={compose.onDiscard}
         onUndoAiDraft={compose.onUndoAiDraft}
         onShowAssistant={compose.onShowAssistant}
+        onAddFiles={compose.onAddFiles}
+        onRemoveAttachment={compose.onRemoveAttachment}
       />
     );
   } else if (settingsVisible) {

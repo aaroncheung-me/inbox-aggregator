@@ -5,6 +5,8 @@ const { getAccount, getCredentials, listAccounts } = require('./accounts');
 const { syncAccount } = require('./sync');
 const { UserError } = require('./errors');
 const { connectorFor } = require('../connectors');
+const { downloadAttachmentFile } = require('./attachments');
+const { MAX_TOTAL_BYTES, isUsersUpload, loadUpload, removeUploads } = require('./outboxFiles');
 
 // Sending waits this long, so Undo can take it back.
 const UNDO_SECONDS = 15;
@@ -14,6 +16,8 @@ const MAX_RECIPIENTS = 50;
 const MAX_SUBJECT_CHARS = 500;
 const MAX_BODY_CHARS = 100000;
 const MAX_REFERENCES = 20; // the newest ones are enough for mail programs to thread
+const MAX_ATTACHMENTS = 20;
+const TOO_BIG = 'Attachments can add up to 25 MB per email';
 
 const EMAIL_ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -46,8 +50,56 @@ async function ownedMessage(userId, messageId) {
   return accountIds.includes(data.account_id) ? data : null;
 }
 
-// Body: { accountId, to, cc, bcc, subject, body, replyToMessageId? }.
-// Checks it, stores it, and sends it UNDO_SECONDS from now. Returns { id, sendAt }.
+// A file name that's safe in an email: no folders or control characters.
+function cleanFilename(name) {
+  const cleaned = String(name || '').replace(/[\\/\x00-\x1f]/g, '_').trim().slice(0, 255);
+  return cleaned || 'attachment';
+}
+
+// input.attachments: [{ uploadId, filename, mimeType, size }], files uploaded
+// for this email (see lib/outboxFiles.js). input.forwardedAttachmentIds: the
+// original's attachments a forward keeps, fetched from the mailbox when it's sent.
+// Returns { attachments, forwarded } to store, after checking they're the
+// user's and fit in 25 MB (sizes are checked again when sending).
+async function readAttachments(userId, input) {
+  const uploads = Array.isArray(input.attachments) ? input.attachments : [];
+  const forwardedIds = Array.isArray(input.forwardedAttachmentIds) ? input.forwardedAttachmentIds.map(Number).filter(Boolean) : [];
+  if (uploads.length + forwardedIds.length > MAX_ATTACHMENTS) throw new UserError(`At most ${MAX_ATTACHMENTS} attachments per email`);
+
+  const attachments = uploads.map(upload => {
+    if (!isUsersUpload(userId, upload?.uploadId)) throw new UserError('An attachment was not uploaded, remove it and attach it again');
+    return {
+      uploadId: upload.uploadId,
+      filename: cleanFilename(upload.filename),
+      mimeType: typeof upload.mimeType === 'string' && /^[\w.+-]+\/[\w.+-]+$/.test(upload.mimeType) ? upload.mimeType : 'application/octet-stream',
+      size: Number(upload.size) || 0,
+    };
+  });
+
+  let forwarded = [];
+  if (forwardedIds.length) {
+    const accountIds = (await listAccounts(userId)).map(a => a.id);
+    const { data, error } = await supabase
+      .from('attachments')
+      .select('id, size_bytes, messages!inner(account_id)')
+      .in('id', forwardedIds);
+    if (error) throw error;
+    forwarded = data.filter(a => accountIds.includes(a.messages.account_id));
+    if (forwarded.length !== forwardedIds.length) throw new UserError("One of the original's attachments couldn't be found");
+  }
+
+  const total = attachments.reduce((sum, a) => sum + a.size, 0) + forwarded.reduce((sum, a) => sum + (a.size_bytes || 0), 0);
+  if (total > MAX_TOTAL_BYTES) throw new UserError(TOO_BIG);
+  return { attachments, forwarded: forwarded.map(a => a.id) };
+}
+
+function uploadIdsOf(email) {
+  return (email?.attachments || []).map(a => a.uploadId);
+}
+
+// Body: { accountId, to, cc, bcc, subject, body, replyToMessageId?, attachments?,
+// forwardedAttachmentIds? }. Checks it, stores it, and sends it UNDO_SECONDS
+// from now. Returns { id, sendAt }.
 async function queueEmail(userId, input) {
   const account = await getAccount(userId, Number(input.accountId) || 0);
   if (!account) throw new UserError('Choose which account to send from');
@@ -62,7 +114,8 @@ async function queueEmail(userId, input) {
   const subject = typeof input.subject === 'string' ? input.subject.trim().slice(0, MAX_SUBJECT_CHARS) : '';
   const body = typeof input.body === 'string' ? input.body : '';
   if (body.length > MAX_BODY_CHARS) throw new UserError('That email is too long to send');
-  if (!subject && !body.trim()) throw new UserError('The email is empty');
+  const { attachments, forwarded } = await readAttachments(userId, input);
+  if (!subject && !body.trim() && !attachments.length && !forwarded.length) throw new UserError('The email is empty');
 
   let replyToMessageId = null;
   if (input.replyToMessageId != null) {
@@ -78,7 +131,7 @@ async function queueEmail(userId, input) {
       user_id: userId,
       account_id: account.id,
       send_at: sendAt,
-      email: { to, cc, bcc, subject, body, replyToMessageId },
+      email: { to, cc, bcc, subject, body, replyToMessageId, attachments, forwarded },
     })
     .select('id')
     .single();
@@ -96,12 +149,14 @@ async function cancelEmail(userId, outboxId) {
     .eq('id', outboxId)
     .eq('user_id', userId)
     .eq('status', 'waiting')
-    .select('id');
+    .select('id, email');
   if (error) throw error;
   if (!data.length) return false;
 
   clearTimeout(timers.get(Number(outboxId)));
   timers.delete(Number(outboxId));
+  // the app still has the files, for when the email comes back to be edited
+  await removeUploads(uploadIdsOf(data[0].email));
   return true;
 }
 
@@ -126,6 +181,27 @@ function schedule(outboxId, sendAt) {
   }, delay));
 }
 
+// The files to attach, in nodemailer's shape: the uploaded ones from storage,
+// a forward's from the mailbox the original is in.
+async function loadAttachments(userId, email) {
+  const files = [];
+  for (const a of email.attachments || []) {
+    try {
+      files.push({ filename: a.filename, contentType: a.mimeType, content: await loadUpload(a.uploadId) });
+    } catch (err) {
+      console.error(`Loading attachment ${a.uploadId} failed:`, err.message);
+      throw new UserError(`The attachment "${a.filename}" couldn't be read. Nothing was sent; attach it again and resend.`);
+    }
+  }
+  for (const attachmentId of email.forwarded || []) {
+    const file = await downloadAttachmentFile(userId, attachmentId);
+    if (!file) throw new UserError("One of the original's attachments couldn't be found. Nothing was sent.");
+    files.push({ filename: file.filename || 'attachment', contentType: file.mimeType || undefined, content: file.buffer });
+  }
+  if (files.reduce((sum, f) => sum + f.content.length, 0) > MAX_TOTAL_BYTES) throw new UserError(`${TOO_BIG}. Nothing was sent.`);
+  return files;
+}
+
 // The nodemailer message, plus Gmail's thread id when replying within the same Gmail account.
 async function buildMail(account, email) {
   const domain = account.email_address.split('@')[1];
@@ -137,6 +213,7 @@ async function buildMail(account, email) {
     subject: email.subject,
     text: email.body,
     messageId: `<${crypto.randomUUID()}@${domain}>`,
+    attachments: await loadAttachments(account.user_id, email),
   };
   if (!email.replyToMessageId) return { mail, threadId: null };
 
@@ -191,8 +268,11 @@ async function deliver(outboxId) {
   } catch (err) {
     console.error(`Sending outbox email ${row.id} failed:`, err);
     await markFailed(row.id, err instanceof UserError ? err.message : 'Sending failed. Nothing was sent; try again.');
+    // the app still has the files, and uploads them again if it's resent
+    await removeUploads(uploadIdsOf(row.email));
     return;
   }
+  await removeUploads(uploadIdsOf(row.email));
 
   const { error: sentError } = await supabase
     .from('outbox')

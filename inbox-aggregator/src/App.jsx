@@ -285,6 +285,8 @@ function App({ userEmail, onSignOut }) {
           accounts: accounts.accounts,
           sending: compose.sending,
           onChange: compose.update,
+          onAddFiles: compose.addFiles,
+          onRemoveAttachment: compose.removeAttachment,
           onSend: compose.send,
           onDiscard: compose.discard,
           onUndoAiDraft: compose.undoAiDraft,

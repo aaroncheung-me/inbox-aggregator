@@ -238,11 +238,25 @@ export async function getReplyInfo(messageId) {
   return res.json();
 }
 
-// email: { accountId, to, cc, bcc, subject, body, replyToMessageId }. The server
+// email: { accountId, to, cc, bcc, subject, body, replyToMessageId, attachments,
+// forwardedAttachmentIds } (see POST /send). The server
 // waits 15 seconds before sending, so it can be undone. Returns { id, sendAt }.
 export async function sendEmail(email) {
   const res = await apiFetch('/send', { method: 'POST', ...jsonBody(email) });
   if (!res.ok) await failWith(res, 'Sending failed, try again');
+  return res.json();
+}
+
+// Uploads one file to attach to an email that's about to be sent. Returns
+// { uploadId } for sendEmail. Always sent as octet-stream, with the real type
+// beside it, so the server treats every file the same way.
+export async function uploadAttachment(file) {
+  const res = await apiFetch('/send/uploads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', 'X-Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  if (!res.ok) await failWith(res, `Uploading "${file.name}" failed, try again`);
   return res.json();
 }
 
