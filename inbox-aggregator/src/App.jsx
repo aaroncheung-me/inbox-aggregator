@@ -184,6 +184,8 @@ function App({ userEmail, onSignOut }) {
         onAccountConnected={handleAccountConnected}
         userEmail={userEmail}
         onSignOut={onSignOut}
+        onOpenSettings={nav.openSettings}
+        settingsOpen={nav.settingsVisible}
         search={search.search}
         onSearch={handleSearch}
         onClearSearch={search.clear}
@@ -274,6 +276,7 @@ function App({ userEmail, onSignOut }) {
           </div>
         )}
         onTogglePin={openEmail.togglePin}
+        settingsVisible={nav.settingsVisible}
         compose={draft && {
           draft,
           visible: nav.draftVisible,

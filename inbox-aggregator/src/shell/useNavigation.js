@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { PHONE_LAYOUT } from '../layout';
 
 // What's on screen: the sidebar's tab, and the one thing the main pane shows
-// (an email, a note, the email being written, or else the chat). On a phone,
-// also which of the two screens is showing.
+// (an email, a note, the email being written, Settings, or else the chat). On
+// a phone, also which of the two screens is showing.
 // (While an email is being written, its assistant can open emails and notes,
 // and the draft waits behind a "Back to your email" link.)
 export function useNavigation(initialTab) {
@@ -11,6 +11,7 @@ export function useNavigation(initialTab) {
   const [selectedMessageId, setSelectedMessageId] = useState(null);
   const [selectedNoteId, setSelectedNoteId] = useState(null);
   const [draftVisible, setDraftVisible] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
   // phone layout only: 'list' (sidebar) or 'main' (email or chat)
   const [phoneScreen, setPhoneScreen] = useState('list');
 
@@ -38,6 +39,7 @@ export function useNavigation(initialTab) {
 
   function openMessage(id) {
     setDraftVisible(false);
+    setSettingsVisible(false);
     setSelectedNoteId(null);
     setSelectedMessageId(id);
     showMainScreen();
@@ -45,6 +47,7 @@ export function useNavigation(initialTab) {
 
   function openNote(id) {
     setDraftVisible(false);
+    setSettingsVisible(false);
     setSelectedMessageId(null);
     setSelectedNoteId(id);
     setTab('notes');
@@ -53,6 +56,7 @@ export function useNavigation(initialTab) {
 
   function openChat() {
     setDraftVisible(false);
+    setSettingsVisible(false);
     setSelectedNoteId(null);
     setSelectedMessageId(null);
     showMainScreen();
@@ -60,6 +64,15 @@ export function useNavigation(initialTab) {
 
   function showDraft() {
     setDraftVisible(true);
+    setSettingsVisible(false);
+    showMainScreen();
+  }
+
+  function openSettings() {
+    setDraftVisible(false);
+    setSelectedNoteId(null);
+    setSelectedMessageId(null);
+    setSettingsVisible(true);
     showMainScreen();
   }
 
@@ -69,6 +82,7 @@ export function useNavigation(initialTab) {
     selectedMessageId,
     selectedNoteId,
     draftVisible,
+    settingsVisible,
     phoneScreen,
     showMainScreen,
     showListScreen,
@@ -76,6 +90,7 @@ export function useNavigation(initialTab) {
     openNote,
     openChat,
     showDraft,
+    openSettings,
     hideDraft: () => setDraftVisible(false),
     closeMessage: () => setSelectedMessageId(null),
     closeNote: () => setSelectedNoteId(null),

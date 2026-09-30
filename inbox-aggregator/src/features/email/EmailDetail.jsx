@@ -5,8 +5,14 @@ import ActionMenu from '../../ui/ActionMenu';
 import { fileSize, timeLeft } from '../../format';
 import { downloadAttachment } from '../../api';
 import { useEmailHtml } from './useEmailHtml';
+import { useLoadImages } from '../settings/loadImages';
 import Linkify from '../../ui/Linkify';
 import EmailHtml from './EmailHtml';
+
+// Whether the email shows any images from the web (in img tags or its styles).
+function hasWebImages(html) {
+  return Boolean(html) && /<img[^>]+src\s*=\s*["']?https?:|url\(\s*["']?https?:|background\s*=\s*["']?https?:/i.test(html);
+}
 
 // One email in the main pane. Its actions sit in the top bar: on a phone,
 // Reply plus a More menu for the rest, since the full row doesn't fit.
@@ -19,6 +25,11 @@ function EmailDetail({ back, messageId, message, account, tempColors, loading, e
   const [download, setDownload] = useState(null); // { id, error? } of the attachment being saved
   const ready = Boolean(message && !loading && !error);
   const formatted = useEmailHtml(messageId);
+  // images from the web: per the setting, or shown for this email on request
+  const loadImagesSetting = useLoadImages();
+  const [showImages, setShowImages] = useState(false);
+  const loadImages = loadImagesSetting || showImages;
+  const imagesHidden = !loadImages && hasWebImages(formatted.html);
 
   async function save(attachment) {
     setDownload({ id: attachment.id });
@@ -94,8 +105,14 @@ function EmailDetail({ back, messageId, message, account, tempColors, loading, e
           </ul>
         )}
         {download?.error && <p className="form-error">{download.error}</p>}
+        {imagesHidden && (
+          <div className="images-hidden">
+            <span>Images from the web are hidden.</span>
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => setShowImages(true)}>Show images</button>
+          </div>
+        )}
         {formatted.html ? (
-          <EmailHtml html={formatted.html} />
+          <EmailHtml html={formatted.html} loadImages={loadImages} />
         ) : formatted.status === 'loading' ? (
           <div className="email-html-loading">Loading email...</div>
         ) : (

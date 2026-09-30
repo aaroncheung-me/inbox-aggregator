@@ -51,6 +51,7 @@ function EmailHtml({ html, loadImages = true }) {
     const frame = frameRef.current;
     let contentObserver = null;
     let waiting = 0;
+    let pendingFit = 0;
 
     // the frame as tall as the content (its size already reflects any scaling)
     function fitHeight() {
@@ -68,13 +69,20 @@ function EmailHtml({ html, loadImages = true }) {
       fitHeight();
     }
 
+    // Resizing the frame from inside a ResizeObserver callback resizes what's
+    // being observed, which browsers report as a loop, so it waits for the next frame.
+    function fitLater(fn) {
+      cancelAnimationFrame(pendingFit);
+      pendingFit = requestAnimationFrame(fn);
+    }
+
     // the new document replaces the frame's blank one; start watching it as soon
     // as it's there, rather than waiting for every image to load
     function watchWhenReady() {
       const doc = frame.contentDocument;
       if (doc?.body && doc.URL === 'about:srcdoc') {
         fit();
-        contentObserver = new ResizeObserver(fitHeight);
+        contentObserver = new ResizeObserver(() => fitLater(fitHeight));
         contentObserver.observe(doc.body);
       } else {
         waiting = requestAnimationFrame(watchWhenReady);
@@ -87,7 +95,7 @@ function EmailHtml({ html, loadImages = true }) {
     const frameObserver = new ResizeObserver(() => {
       if (frame.clientWidth !== lastWidth) {
         lastWidth = frame.clientWidth;
-        fit();
+        fitLater(fit);
       }
     });
     frameObserver.observe(frame);
@@ -95,6 +103,7 @@ function EmailHtml({ html, loadImages = true }) {
 
     return () => {
       cancelAnimationFrame(waiting);
+      cancelAnimationFrame(pendingFit);
       contentObserver?.disconnect();
       frameObserver.disconnect();
       frame.removeEventListener('load', fit);
@@ -103,6 +112,9 @@ function EmailHtml({ html, loadImages = true }) {
 
   return (
     <iframe
+      // a new frame when images are switched on, rather than swapping the document
+      // inside one that's still being measured
+      key={loadImages ? 'images' : 'no-images'}
       ref={frameRef}
       className="email-html"
       title="Email content"

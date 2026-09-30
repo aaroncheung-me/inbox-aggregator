@@ -34,6 +34,8 @@ function Sidebar({
   onAccountConnected,
   userEmail,
   onSignOut,
+  onOpenSettings,
+  settingsOpen,
   search,
   onSearch,
   onClearSearch,
@@ -227,12 +229,22 @@ function Sidebar({
           onAccountConnected={onAccountConnected}
           userEmail={userEmail}
           onSignOut={onSignOut}
+          onOpenSettings={onOpenSettings}
           tempAddresses={tempAddresses}
         />
       ) : (
         <div className="sidebar-footer">
           <span className="signed-in-as" title={userEmail}>{userEmail}</span>
-          <button className="btn btn-ghost btn-small" onClick={onSignOut}>Sign out</button>
+          <span className="sidebar-footer-actions">
+            <button
+              className={`btn btn-ghost btn-small settings-button${settingsOpen ? ' active' : ''}`}
+              onClick={onOpenSettings}
+              aria-pressed={settingsOpen}
+            >
+              Settings
+            </button>
+            <button className="btn btn-ghost btn-small" onClick={onSignOut}>Sign out</button>
+          </span>
         </div>
       )}
     </div>

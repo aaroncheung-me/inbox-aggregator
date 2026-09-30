@@ -6,7 +6,7 @@ import { accountsSummary } from '../../format';
 
 // Phone layout: one bar under the message list, "Accounts (3)" with
 // "+ Add account" beside it. Tapping the heading opens a panel above it with the
-// accounts, temp addresses and sign-out.
+// accounts, temp addresses, Settings and sign-out.
 // (Sync now sits above the list, beside Received | Sent.)
 function PhoneAccountsBar({
   accounts,
@@ -16,6 +16,7 @@ function PhoneAccountsBar({
   userEmail,
   tempAddresses = null,
   onSignOut,
+  onOpenSettings,
 }) {
   const [expanded, setExpanded] = useState(false);
   const [creatingTemp, setCreatingTemp] = useState(false);
@@ -31,7 +32,10 @@ function PhoneAccountsBar({
           )}
           <div className="phone-bar-row">
             <span className="signed-in-as" title={userEmail}>{userEmail}</span>
-            <button className="btn btn-ghost btn-small" onClick={onSignOut}>Sign out</button>
+            <span className="sidebar-footer-actions">
+              <button className="btn btn-ghost btn-small" onClick={() => { setExpanded(false); onOpenSettings(); }}>Settings</button>
+              <button className="btn btn-ghost btn-small" onClick={onSignOut}>Sign out</button>
+            </span>
           </div>
         </div>
       )}

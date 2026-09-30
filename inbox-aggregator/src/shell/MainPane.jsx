@@ -2,10 +2,11 @@ import ChatPanel from '../features/assistant/ChatPanel';
 import ComposeView from '../features/compose/ComposeView';
 import EmailDetail from '../features/email/EmailDetail';
 import NoteDetail from '../features/notes/NoteDetail';
+import SettingsPage from '../features/settings/SettingsPage';
 import PaneBar from '../ui/PaneBar';
 
-// Shows one of: the email being written, the selected note, the selected email,
-// or the assistant chat. Each starts with the same top bar (PaneBar), whose left
+// Shows one of: the email being written, Settings, the selected note, the
+// selected email, or the assistant chat. Each starts with the same top bar (PaneBar), whose left
 // end is worked out here: on a phone, back to the list; on desktop, back to the
 // email being written or to the assistant, when there's one to go back to.
 // noteActions: { onSaveBody, onDelete, onAddAddon, onUpdateAddon, onRemoveAddon, onOpenNote, onCreate, onAiCreate }
@@ -37,6 +38,7 @@ function MainPane({
   onReply,
   onTogglePin,
   compose,
+  settingsVisible = false,
   // phone only: the ask box and Inbox | Notes, kept above every page but the writing screen
   phoneHeader = null,
 }) {
@@ -70,6 +72,8 @@ function MainPane({
         onShowAssistant={compose.onShowAssistant}
       />
     );
+  } else if (settingsVisible) {
+    content = <SettingsPage back={back} />;
   } else if (selectedNote) {
     content = (
       <NoteDetail

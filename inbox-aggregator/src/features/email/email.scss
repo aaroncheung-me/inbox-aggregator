@@ -197,6 +197,20 @@
     font-size: 14px;
   }
 
+  // "Images from the web are hidden. [Show images]", above the email
+  .images-hidden {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-3;
+    margin-bottom: $space-2;
+    padding: $space-2 $space-3;
+    border-radius: 6px;
+    background: $accent-soft;
+    font-size: 13px;
+    color: $text-secondary;
+  }
+
   // the formatted email's place while it loads
   .email-html-loading {
     padding: $space-4;
