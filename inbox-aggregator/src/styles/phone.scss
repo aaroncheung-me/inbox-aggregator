@@ -101,6 +101,11 @@
     color: $accent;
   }
 
+  // more of each email's text beside the sender, in a conversation's list
+  .email-detail .conversation-from {
+    width: 90px;
+  }
+
   // the writing screen's bar has Assistant, Attach, Send ▾ and Discard; its
   // title would only squeeze them
   .compose-bar .pane-title {

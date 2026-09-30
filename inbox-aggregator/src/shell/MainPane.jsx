@@ -119,6 +119,7 @@ function MainPane({
         now={now}
         allNotes={notes}
         onOpenNote={noteActions.onOpenNote}
+        onOpenMessage={onOpenMessage}
         onCreateNote={noteActions.onCreate}
         onAiCreateNote={noteActions.onAiCreate}
         onReply={onReply}

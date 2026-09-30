@@ -41,6 +41,14 @@ export async function getMessageHtml(messageId) {
   return res.json();
 }
 
+// The other emails in its conversation, newest first:
+// [{ id, account_id, sender, to_recipients, subject, snippet, received_at, labels }].
+export async function getConversation(messageId) {
+  const res = await apiFetch(`/messages/${messageId}/conversation`);
+  if (!res.ok) throw new Error("Couldn't load the conversation");
+  return res.json();
+}
+
 // Saves an attachment ({ id, filename }) to the device.
 export async function downloadAttachment(attachment) {
   const res = await apiFetch(`/attachments/${attachment.id}`);

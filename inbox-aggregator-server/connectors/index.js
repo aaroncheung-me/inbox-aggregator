@@ -11,6 +11,8 @@
 //     -> Buffer
 //   getHtml({ credentials, messageExternalId, maxHtmlBytes, maxInlineBytes })
 //     -> { html, inlineParts: [{ partId, cid, mimeType, content }] }   html is null for plain-text email
+//   getThread({ credentials, messageExternalId })   Gmail only, optional
+//     -> { threadId, messageIds }                    its conversation, for emails stored without a thread id
 //   getReplyHeaders({ credentials, messageExternalId })
 //     -> { messageId, references, replyTo }         what a reply to that message needs
 //   send({ credentials, mail, threadId })           mail: nodemailer message options

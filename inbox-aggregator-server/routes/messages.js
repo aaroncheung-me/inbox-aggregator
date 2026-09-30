@@ -4,6 +4,7 @@ const supabase = require('../lib/supabase');
 const { listAccounts, getMessageAccess } = require('../lib/accounts');
 const { keywordSearch, parseSearchQuery } = require('../lib/search');
 const { getEmailHtml } = require('../lib/emailHtml');
+const { getConversation } = require('../lib/conversations');
 const { downloadAttachmentFile } = require('../lib/attachments');
 const { notesForMessage } = require('../lib/notes');
 const { hiddenTempAddresses, markTempMail } = require('../lib/tempAddresses');
@@ -223,6 +224,19 @@ router.get('/messages/:messageId/html', async (req, res) => {
   } catch (err) {
     console.error(`Fetching the formatted version of message ${req.params.messageId} failed:`, err.message);
     res.status(502).json({ error: "Couldn't load this email's formatting" });
+  }
+});
+
+// The other emails in its conversation, newest first (see lib/conversations.js).
+// On failure the email simply shows without them.
+router.get('/messages/:messageId/conversation', async (req, res) => {
+  try {
+    const conversation = await getConversation(req.userId, req.params.messageId);
+    if (!conversation) return res.status(404).send('Message not found');
+    res.json(conversation);
+  } catch (err) {
+    console.error(`Loading the conversation of message ${req.params.messageId} failed:`, err.message);
+    res.status(502).json({ error: "Couldn't load the conversation" });
   }
 });
 

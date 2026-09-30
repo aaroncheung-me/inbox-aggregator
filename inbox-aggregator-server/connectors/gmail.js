@@ -366,6 +366,15 @@ async function getHtml({ credentials, messageExternalId, maxHtmlBytes, maxInline
   return { html, inlineParts };
 }
 
+// The conversation a message is in, as Gmail groups it: { threadId, messageIds }.
+// For emails synced before thread ids were stored.
+async function getThread({ credentials, messageExternalId }) {
+  const gmail = gmailClient(credentials);
+  const { data: message } = await gmail.users.messages.get({ userId: 'me', id: messageExternalId, format: 'minimal' });
+  const { data: thread } = await gmail.users.threads.get({ userId: 'me', id: message.threadId, format: 'minimal' });
+  return { threadId: message.threadId, messageIds: (thread.messages || []).map(m => m.id) };
+}
+
 // ---------- sending ----------
 
 // The original's headers a reply needs: { messageId, references: [...], replyTo }.
@@ -419,6 +428,7 @@ module.exports = {
   provider: 'gmail',
   downloadAttachment,
   getHtml,
+  getThread,
   getReplyHeaders,
   send,
   getAuthUrl,

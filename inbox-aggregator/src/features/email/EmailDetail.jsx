@@ -2,9 +2,10 @@ import { useState } from 'react';
 import EmailStickyNotes from '../notes/EmailStickyNotes';
 import PaneBar from '../../ui/PaneBar';
 import ActionMenu from '../../ui/ActionMenu';
-import { fileSize, timeLeft } from '../../format';
+import { fileSize, timeLeft, senderName, shortDate } from '../../format';
 import { downloadAttachment } from '../../api';
 import { useEmailHtml } from './useEmailHtml';
+import { useConversation } from './useConversation';
 import { useLoadImages } from '../settings/loadImages';
 import Linkify from '../../ui/Linkify';
 import EmailHtml from './EmailHtml';
@@ -20,11 +21,13 @@ function hasWebImages(html) {
 // opened, known before its details arrive, so its formatted version loads alongside.
 // onReply(kind): kind is 'reply', 'replyAll' or 'forward'. onTogglePin pins or unpins it.
 // tempColors: address -> color of the temp addresses as the app has them now.
-function EmailDetail({ back, messageId, message, account, tempColors, loading, error, now, allNotes, onOpenNote, onCreateNote, onAiCreateNote, onReply, onTogglePin }) {
+// onOpenMessage(id): opens another email of its conversation, listed under it.
+function EmailDetail({ back, messageId, message, account, tempColors, loading, error, now, allNotes, onOpenNote, onOpenMessage, onCreateNote, onAiCreateNote, onReply, onTogglePin }) {
   const [writingNote, setWritingNote] = useState(false);
   const [download, setDownload] = useState(null); // { id, error? } of the attachment being saved
   const ready = Boolean(message && !loading && !error);
   const formatted = useEmailHtml(messageId);
+  const conversation = useConversation(messageId);
   // images from the web: per the setting, or shown for this email on request
   const loadImagesSetting = useLoadImages();
   const [showImages, setShowImages] = useState(false);
@@ -118,6 +121,20 @@ function EmailDetail({ back, messageId, message, account, tempColors, loading, e
         ) : (
           // a plain-text email, or the formatted version couldn't be loaded
           <div className="body"><Linkify text={message.body || message.snippet} /></div>
+        )}
+        {conversation.length > 0 && (
+          <section className="conversation" aria-labelledby={`conversation-${message.id}`}>
+            <div className="conversation-heading" id={`conversation-${message.id}`}>
+              Also in this conversation ({conversation.length})
+            </div>
+            {conversation.map(m => (
+              <button key={m.id} type="button" className="conversation-row" onClick={() => onOpenMessage(m.id)}>
+                <span className="conversation-from">{(m.labels || []).includes('SENT') ? 'Me' : senderName(m.sender)}</span>
+                <span className="conversation-snippet">{m.snippet || m.subject || '(no text)'}</span>
+                <span className="conversation-date">{shortDate(m.received_at)}</span>
+              </button>
+            ))}
+          </section>
         )}
       </div>
     );
