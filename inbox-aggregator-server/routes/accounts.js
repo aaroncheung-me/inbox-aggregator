@@ -31,7 +31,7 @@ router.get('/accounts', async (req, res) => {
   res.json(await listAccounts(req.userId));
 });
 
-// Body: { show_in_inbox?: boolean, color?: "#RRGGBB" }
+// Body: { show_in_inbox?: boolean, color?: "#RRGGBB", signature?: string }
 router.patch('/accounts/:accountId', async (req, res) => {
   const account = await updateAccountSettings(req.userId, req.params.accountId, req.body || {});
   if (!account) return res.status(404).send('Account not found');

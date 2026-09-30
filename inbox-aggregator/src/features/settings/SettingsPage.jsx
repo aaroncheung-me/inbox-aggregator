@@ -10,9 +10,11 @@ const THEMES = [
 ];
 
 // Settings, in the main pane. Every change applies and saves straight away.
-// Appearance and images are remembered on this device only.
-// back: the bar's back button(s), from MainPane.
-function SettingsPage({ back }) {
+// Appearance and images are remembered on this device only; signatures are
+// saved with the accounts, so every device uses them.
+// back: the bar's back button(s), from MainPane. accounts: the sending
+// addresses. onChangeSignature(accountId, text).
+function SettingsPage({ back, accounts, onChangeSignature }) {
   const [theme, setThemeChoice] = useState(getTheme);
   const loadImages = useLoadImages();
 
@@ -58,6 +60,30 @@ function SettingsPage({ back }) {
                 </span>
               </span>
             </label>
+          </section>
+
+          <section className="settings-section" aria-labelledby="settings-signatures">
+            <h2 id="settings-signatures">Signatures</h2>
+            <p className="settings-hint">
+              Added to the end of new emails, replies and forwards from that address. You can edit or remove it in
+              each email.
+            </p>
+            {accounts.length === 0 && <p className="settings-hint">Connect an email account first.</p>}
+            {accounts.map(account => (
+              <div key={account.id} className="settings-signature">
+                <label htmlFor={`signature-${account.id}`}>
+                  <span className="account-dot" style={{ background: account.color }} aria-hidden="true" />
+                  {account.display_name || account.email_address}
+                </label>
+                <textarea
+                  id={`signature-${account.id}`}
+                  rows={3}
+                  placeholder="No signature"
+                  value={account.signature || ''}
+                  onChange={e => onChangeSignature(account.id, e.target.value)}
+                />
+              </div>
+            ))}
           </section>
         </div>
       </div>

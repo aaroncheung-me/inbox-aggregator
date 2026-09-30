@@ -52,6 +52,37 @@
   }
 }
 
+.settings-signature {
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  textarea {
+    padding: $space-2 $space-3;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $surface;
+    color: $text-primary;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: vertical;
+
+    &:focus {
+      outline: none;
+      border-color: $accent;
+    }
+  }
+}
+
 // quiet text on the right of a page's top bar
 .pane-note {
   font-size: 12px;

@@ -5,7 +5,7 @@ import { getAccounts, updateAccount } from '../../api';
 // (They're loaded on open by useSync, which decides from them whether to sync.)
 export function useAccounts({ onNotice, reloadMessages }) {
   const [accounts, setAccounts] = useState([]);
-  const colorSaveTimers = useRef(new Map()); // accountId -> pending save timer
+  const saveTimers = useRef(new Map()); // "accountId:field" -> pending save timer
 
   // Updates the checkbox immediately, then saves; puts it back if saving fails.
   async function toggle(accountId, showInInbox) {
@@ -23,28 +23,38 @@ export function useAccounts({ onNotice, reloadMessages }) {
     }
   }
 
-  // Recolors immediately; saves once the color stops changing, since the
-  // custom picker fires on every step of a drag. On failure, reloads the
-  // accounts so the dot shows what's actually saved.
-  function changeColor(accountId, color) {
-    setAccounts(prev => prev.map(a => (a.id === accountId ? { ...a, color } : a)));
+  // Changes one setting on screen at once, then saves it once it stops
+  // changing (a color picker fires on every step of a drag, a signature on
+  // every key). On failure, reloads the accounts so they show what's saved.
+  function changeSoon(accountId, field, value, delayMs, failText) {
+    setAccounts(prev => prev.map(a => (a.id === accountId ? { ...a, [field]: value } : a)));
 
-    clearTimeout(colorSaveTimers.current.get(accountId));
-    colorSaveTimers.current.set(accountId, setTimeout(async () => {
-      colorSaveTimers.current.delete(accountId);
+    const key = `${accountId}:${field}`;
+    clearTimeout(saveTimers.current.get(key));
+    saveTimers.current.set(key, setTimeout(async () => {
+      saveTimers.current.delete(key);
       try {
-        await updateAccount(accountId, { color });
+        await updateAccount(accountId, { [field]: value });
       } catch (err) {
         console.error(err);
-        onNotice({ type: 'error', text: "Couldn't save that color, try again" });
+        onNotice({ type: 'error', text: failText });
         getAccounts().then(setAccounts).catch(() => {});
       }
-    }, 400));
+    }, delayMs));
+  }
+
+  function changeColor(accountId, color) {
+    changeSoon(accountId, 'color', color, 400, "Couldn't save that color, try again");
+  }
+
+  // plain text, added to emails written from this account
+  function changeSignature(accountId, signature) {
+    changeSoon(accountId, 'signature', signature, 800, "Couldn't save that signature, try again");
   }
 
   function refresh() {
     getAccounts().then(setAccounts).catch(() => {});
   }
 
-  return { accounts, setAccounts, toggle, changeColor, refresh };
+  return { accounts, setAccounts, toggle, changeColor, changeSignature, refresh };
 }

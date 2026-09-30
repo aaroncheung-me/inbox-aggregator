@@ -3,7 +3,7 @@ const { encryptJson, decryptJson } = require('./crypto');
 
 // never includes credentials — those are only read through getCredentials()
 const ACCOUNT_COLUMNS =
-  'id, user_id, provider, email_address, display_name, color, show_in_inbox, last_synced_at, sync_state';
+  'id, user_id, provider, email_address, display_name, color, show_in_inbox, signature, last_synced_at, sync_state';
 
 // Pastel colors handed out to new accounts in order, arranged so neighbors
 // look clearly different. Same list and order as the picker's swatches
@@ -11,6 +11,7 @@ const ACCOUNT_COLUMNS =
 const ACCOUNT_COLORS = ['#93CDE6', '#F5BE8F', '#9FD8B0', '#CDA8EC', '#E9D17A', '#F2A7A7', '#A9B3EE', '#EFA7CC'];
 
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+const MAX_SIGNATURE_CHARS = 2000;
 
 // The first palette color none of the user's accounts use yet, or the
 // least-used one once the palette runs out.
@@ -50,10 +51,12 @@ async function saveConnectedAccount(userId, { provider, emailAddress, credential
 }
 
 // Only fields the app is allowed to change on its own; anything else is ignored.
-async function updateAccountSettings(userId, accountId, { show_in_inbox, color }) {
+async function updateAccountSettings(userId, accountId, { show_in_inbox, color, signature }) {
   const changes = {};
   if (typeof show_in_inbox === 'boolean') changes.show_in_inbox = show_in_inbox;
   if (typeof color === 'string' && HEX_COLOR.test(color)) changes.color = color.toUpperCase();
+  // plain text; an empty one is removed
+  if (typeof signature === 'string') changes.signature = signature.trimEnd().slice(0, MAX_SIGNATURE_CHARS) || null;
   if (!Object.keys(changes).length) return getAccount(userId, accountId);
 
   const { data, error } = await supabase

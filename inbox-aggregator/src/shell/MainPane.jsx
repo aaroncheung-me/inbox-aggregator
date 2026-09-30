@@ -39,6 +39,9 @@ function MainPane({
   onTogglePin,
   compose,
   settingsVisible = false,
+  // for Settings: the accounts, whose signatures it edits
+  accounts = [],
+  onChangeSignature,
   // phone only: the ask box and Inbox | Notes, kept above every page but the writing screen
   phoneHeader = null,
 }) {
@@ -73,7 +76,7 @@ function MainPane({
       />
     );
   } else if (settingsVisible) {
-    content = <SettingsPage back={back} />;
+    content = <SettingsPage back={back} accounts={accounts} onChangeSignature={onChangeSignature} />;
   } else if (selectedNote) {
     content = (
       <NoteDetail

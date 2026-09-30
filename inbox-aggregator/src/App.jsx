@@ -277,6 +277,8 @@ function App({ userEmail, onSignOut }) {
         )}
         onTogglePin={openEmail.togglePin}
         settingsVisible={nav.settingsVisible}
+        accounts={accounts.accounts}
+        onChangeSignature={accounts.changeSignature}
         compose={draft && {
           draft,
           visible: nav.draftVisible,

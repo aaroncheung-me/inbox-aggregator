@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { askAssistant, deleteNote, getReplyInfo, sendEmail, getSendStatus, cancelSend } from '../../api';
 import { applyProgress, markNoteUndone } from '../assistant/useChat';
-import { newDraft, draftFromMessage, fullBody, draftHasContent } from './compose';
+import { newDraft, draftFromMessage, fullBody, draftHasContent, withAccount, withSignature } from './compose';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -23,6 +23,7 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
   const followedSend = useRef(null); // the outbox id whose progress is being checked
 
   const ownAddresses = accounts.map(a => a.email_address.toLowerCase());
+  const signatureOf = accountId => accounts.find(a => a.id === accountId)?.signature || '';
 
   // Opens a draft on the writing screen (withChat: its assistant conversation, when
   // bringing back one that was undone). Asks first if it would replace one with
@@ -55,7 +56,7 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
       onNotice({ type: 'error', text: 'Connect an email account first' });
       return;
     }
-    open(newDraft(account.id));
+    open(newDraft(account.id, signatureOf(account.id)));
   }
 
   // kind: 'reply' | 'replyAll' | 'forward', on the email that's open. The draft
@@ -64,7 +65,7 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
   function reply(kind) {
     const message = openMessage;
     if (!message) return;
-    const initial = draftFromMessage(kind, message, ownAddresses);
+    const initial = draftFromMessage(kind, message, ownAddresses, null, signatureOf(message.account_id));
     if (!open(initial) || kind === 'forward') return;
 
     getReplyInfo(message.id).then(({ replyTo }) => {
@@ -76,8 +77,16 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
     });
   }
 
+  // A different From address brings its own signature (see withAccount).
   function update(changes) {
-    setDraft(prev => (prev ? { ...prev, ...changes, error: null } : prev));
+    setDraft(prev => {
+      if (!prev) return prev;
+      const { accountId, ...rest } = changes;
+      const moved = accountId !== undefined && accountId !== prev.accountId
+        ? withAccount(prev, accountId, signatureOf(accountId))
+        : prev;
+      return { ...moved, ...rest, error: null };
+    });
   }
 
   // On a phone this always lands on the list, whichever of the draft's two
@@ -204,14 +213,15 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
     }
   }
 
-  // Puts the assistant's draft into the email. What the user had before is
-  // kept (from before the first AI draft), so Undo always returns to their own text.
+  // Puts the assistant's draft into the email, with the signature kept under
+  // it. What the user had before is kept (from before the first AI draft), so
+  // Undo always returns to their own text.
   function applyAiDraft(exchangeIndex) {
     const suggestion = chat[exchangeIndex]?.draft;
     if (!suggestion || !draft) return;
     setDraft(prev => ({
       ...prev,
-      body: suggestion.body,
+      body: withSignature(suggestion.body, prev),
       subject: suggestion.subject || prev.subject,
       aiPrevious: prev.aiPrevious || { body: prev.body, subject: prev.subject },
       error: null,

@@ -63,8 +63,47 @@ function originalText(message) {
 
 export const DRAFT_TITLES = { new: 'New email', reply: 'Reply', forward: 'Forward' };
 
-// A blank writing screen. accountId: the account it's sent from.
-export function newDraft(accountId) {
+// ---------- signatures ----------
+// A signature sits under the text, after the usual "-- " line mail apps
+// recognize. The draft remembers the block it added (draft.signature), so it
+// can tell whether the user has changed it.
+const SIGNATURE_LINE = '\n\n-- \n';
+
+// The block for an account's signature, or '' when it has none.
+export function signatureBlock(signature) {
+  const text = (signature || '').trim();
+  return text ? `${SIGNATURE_LINE}${text}` : '';
+}
+
+// Whether the body still ends with the signature exactly as it was added.
+function signatureUntouched(draft) {
+  return Boolean(draft.signature) && draft.body.endsWith(draft.signature);
+}
+
+// The body without an untouched signature: what the user has written.
+function writtenText(draft) {
+  return signatureUntouched(draft) ? draft.body.slice(0, -draft.signature.length) : draft.body;
+}
+
+// Moves the draft to another sending account. Its signature is swapped for
+// that account's, unless the user changed it (then it's left as they made it).
+export function withAccount(draft, accountId, signature) {
+  if (draft.signature && !signatureUntouched(draft)) return { ...draft, accountId };
+  const next = signatureBlock(signature);
+  return { ...draft, accountId, body: writtenText(draft) + next, signature: next };
+}
+
+// An AI-written body with the draft's signature under it, unless the AI
+// already included it.
+export function withSignature(body, draft) {
+  if (!draft.signature || body.includes(draft.signature.slice(SIGNATURE_LINE.length))) return body;
+  return body.trimEnd() + draft.signature;
+}
+
+// A blank writing screen. accountId: the account it's sent from, and signature
+// that account's signature (text), added under where the user writes.
+export function newDraft(accountId, signature = '') {
+  const block = signatureBlock(signature);
   return {
     mode: 'new',
     accountId,
@@ -73,7 +112,8 @@ export function newDraft(accountId) {
     bcc: '',
     showCcBcc: false,
     subject: '',
-    body: '',
+    body: block,
+    signature: block, // the signature block as added, see signatureUntouched
     quoted: '', // the original, added under the body when sending
     originalMessageId: null, // the email being replied to or forwarded
     aiPrevious: null, // what the body/subject were before an AI draft was used, for Undo
@@ -85,8 +125,9 @@ export function newDraft(accountId) {
 // kind: 'reply' | 'replyAll' | 'forward'. message: the full email (from getMessage).
 // ownAddresses: every connected address, left out of reply-all.
 // replyTo: the Reply-To address, when the sender set one (fetched separately).
-export function draftFromMessage(kind, message, ownAddresses, replyTo = null) {
-  const draft = { ...newDraft(message.account_id), originalMessageId: message.id };
+// signature: the signature of the account that received it, which the reply is sent from.
+export function draftFromMessage(kind, message, ownAddresses, replyTo = null, signature = '') {
+  const draft = { ...newDraft(message.account_id, signature), originalMessageId: message.id };
 
   if (kind === 'forward') {
     return {
@@ -133,6 +174,7 @@ export function fullBody(draft) {
   return `${draft.body.trimEnd()}\n\n${draft.quoted}`;
 }
 
+// An untouched signature on its own doesn't count as something written.
 export function draftHasContent(draft) {
-  return Boolean(draft.body.trim() || (draft.mode === 'new' && (draft.subject.trim() || draft.to.trim())));
+  return Boolean(writtenText(draft).trim() || (draft.mode === 'new' && (draft.subject.trim() || draft.to.trim())));
 }
