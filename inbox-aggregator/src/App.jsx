@@ -13,6 +13,7 @@ import { useTempAddresses } from './features/accounts/useTempAddresses';
 import { useNotes } from './features/notes/useNotes';
 import { useChat } from './features/assistant/useChat';
 import { useCompose } from './features/compose/useCompose';
+import { useScheduled } from './features/compose/useScheduled';
 import Sidebar from './shell/Sidebar';
 import MainPane from './shell/MainPane';
 import CreditsBanner from './shell/CreditsBanner';
@@ -79,6 +80,7 @@ function App({ userEmail, onSignOut }) {
     refreshStatus: status.refresh,
     onNoteDeleted: noteId => { if (nav.selectedNoteId === noteId) nav.closeNote(); },
   });
+  const scheduled = useScheduled({ reloadMessages: list.reload });
   const compose = useCompose({
     accounts: accounts.accounts,
     openMessage: openEmail.message,
@@ -89,6 +91,7 @@ function App({ userEmail, onSignOut }) {
     reloadMessages: list.reload,
     refreshNotes: notes.refresh,
     refreshStatus: status.refresh,
+    onScheduled: scheduled.refresh,
   });
   const { draft } = compose;
 
@@ -143,6 +146,13 @@ function App({ userEmail, onSignOut }) {
     search.run(query);
   }
 
+  // Received | Sent share one list; Sent also shows the scheduled emails, freshly loaded
+  function handleFolderChange(next) {
+    list.changeFolder(next);
+    if (next === 'sent') scheduled.refresh();
+  }
+
+  const scheduledItem = scheduled.scheduled.find(s => s.id === nav.selectedScheduledId) || null;
   const selectedNote = notes.notes.find(note => note.id === nav.selectedNoteId) || null;
   const selectedAccount = accounts.accounts.find(a => a.id === openEmail.message?.account_id);
   const dueCount = dueReminderCount(notes.notes, now);
@@ -193,7 +203,10 @@ function App({ userEmail, onSignOut }) {
         tab={nav.tab}
         onTabChange={nav.setTab}
         folder={list.folder}
-        onFolderChange={list.changeFolder}
+        onFolderChange={handleFolderChange}
+        scheduled={scheduled.scheduled}
+        selectedScheduledId={nav.selectedScheduledId}
+        onOpenScheduled={nav.openScheduled}
         dueCount={dueCount}
         notes={notes.notes}
         now={now}
@@ -277,6 +290,20 @@ function App({ userEmail, onSignOut }) {
         )}
         onTogglePin={openEmail.togglePin}
         settingsVisible={nav.settingsVisible}
+        scheduled={scheduledItem && {
+          item: scheduledItem,
+          account: accounts.accounts.find(a => a.id === scheduledItem.accountId),
+          onEdit: async () => { if (await compose.editScheduled(scheduledItem)) nav.closeScheduled(); },
+          onSendNow: async () => {
+            await scheduled.sendNow(scheduledItem.id);
+            nav.closeScheduled();
+            setNotice({ type: 'success', text: 'Sending it now' });
+          },
+          onCancel: async () => {
+            await scheduled.cancel(scheduledItem.id);
+            nav.closeScheduled();
+          },
+        }}
         accounts={accounts.accounts}
         onChangeSignature={accounts.changeSignature}
         compose={draft && {
@@ -287,7 +314,9 @@ function App({ userEmail, onSignOut }) {
           onChange: compose.update,
           onAddFiles: compose.addFiles,
           onRemoveAttachment: compose.removeAttachment,
-          onSend: compose.send,
+          // wrapped: a click event must not be taken for Send later's time
+          onSend: () => compose.send(),
+          onSchedule: date => compose.send(date),
           onDiscard: compose.discard,
           onUndoAiDraft: compose.undoAiDraft,
           onShowAssistant: nav.showListScreen,

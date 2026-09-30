@@ -3,9 +3,9 @@ const supabase = require('./supabase');
 
 // Files attached to emails being sent. The app uploads each one as Send is
 // pressed; it waits in a private storage bucket (migration 015) while its
-// email waits out the undo time, and is deleted once the email has been sent,
-// undone or has failed. Anything left behind (an upload whose email was never
-// queued) is removed by the cron after a day.
+// email waits out the undo time (or until a scheduled email goes), and is
+// deleted once the email has been sent or undone. Anything left behind (an
+// upload whose email was never queued) is removed by the cron after a day.
 
 const BUCKET = 'outbox-attachments';
 // Gmail's limit for everything attached to one email
@@ -43,18 +43,27 @@ async function removeUploads(uploadIds) {
   if (error) console.error('Removing sent attachments failed (the cron will retry):', error.message);
 }
 
-// The cron's tidy-up: uploads older than a day, in every user's folder.
+// The cron's tidy-up: uploads older than a day, in every user's folder, that
+// no email still waiting (a scheduled one) or failed-while-scheduled uses.
 async function removeLeftoverUploads() {
   const { data: folders, error } = await supabase.storage.from(BUCKET).list('', { limit: 1000 });
   if (error) throw error;
   const cutoff = Date.now() - LEFTOVER_AFTER_MS;
+
+  const { data: rows, error: rowsError } = await supabase
+    .from('outbox')
+    .select('email')
+    .in('status', ['waiting', 'failed']);
+  if (rowsError) throw rowsError;
+  const inUse = new Set(rows.flatMap(r => (r.email?.attachments || []).map(a => a.uploadId)));
 
   for (const folder of folders) {
     const { data: files, error: listError } = await supabase.storage.from(BUCKET).list(folder.name, { limit: 1000 });
     if (listError) throw listError;
     const old = files
       .filter(f => f.created_at && new Date(f.created_at).getTime() < cutoff)
-      .map(f => `${folder.name}/${f.name}`);
+      .map(f => `${folder.name}/${f.name}`)
+      .filter(uploadId => !inUse.has(uploadId));
     if (old.length) await removeUploads(old);
   }
 }

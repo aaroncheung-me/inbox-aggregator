@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { scheduleLabel } from './sendLater';
 
 // The bar shown after pressing Send: a countdown with Undo, then "Sent", or
-// why it wasn't sent. outgoing: { sendAt, status, error, undoError }.
+// why it wasn't sent; after Send later, when it goes, with Undo.
+// outgoing: { sendAt, status, error, undoError }.
 function SendingBar({ outgoing, onUndo, onOpenDraft, onDismiss }) {
   const [now, setNow] = useState(() => Date.now());
 
@@ -19,6 +21,14 @@ function SendingBar({ outgoing, onUndo, onOpenDraft, onDismiss }) {
       <>
         <span>Not sent: {outgoing.error || 'something went wrong'}</span>
         <button className="btn btn-small" onClick={onOpenDraft}>Open email</button>
+        <button className="notice-dismiss" onClick={onDismiss} aria-label="Dismiss">×</button>
+      </>
+    );
+  } else if (outgoing.status === 'scheduled') {
+    content = (
+      <>
+        <span>Scheduled for {scheduleLabel(outgoing.sendAt)}</span>
+        <button className="btn btn-small" onClick={onUndo}>Undo</button>
         <button className="notice-dismiss" onClick={onDismiss} aria-label="Dismiss">×</button>
       </>
     );

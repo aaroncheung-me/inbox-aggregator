@@ -3,16 +3,18 @@ import ComposeView from '../features/compose/ComposeView';
 import EmailDetail from '../features/email/EmailDetail';
 import NoteDetail from '../features/notes/NoteDetail';
 import SettingsPage from '../features/settings/SettingsPage';
+import ScheduledView from '../features/compose/ScheduledView';
 import PaneBar from '../ui/PaneBar';
 
-// Shows one of: the email being written, Settings, the selected note, the
-// selected email, or the assistant chat. Each starts with the same top bar (PaneBar), whose left
+// Shows one of: the email being written, Settings, a scheduled email, the
+// selected note, the selected email, or the assistant chat. Each starts with the same top bar (PaneBar), whose left
 // end is worked out here: on a phone, back to the list; on desktop, back to the
 // email being written or to the assistant, when there's one to go back to.
 // noteActions: { onSaveBody, onDelete, onAddAddon, onUpdateAddon, onRemoveAddon, onOpenNote, onCreate, onAiCreate }
 // aiHeadsUp: { noteId, message } from the last AI save, shown on that note.
 // compose: the email being written, or null: { draft, visible, accounts, sending,
-//   onChange, onSend, onDiscard, onUndoAiDraft, onShowAssistant, onShow, onAddFiles, onRemoveAttachment }.
+//   onChange, onSend, onSchedule, onDiscard, onUndoAiDraft, onShowAssistant, onShow, onAddFiles,
+//   onRemoveAttachment }.
 function MainPane({
   selectedMessageId,
   selectedMessage,
@@ -39,6 +41,8 @@ function MainPane({
   onTogglePin,
   compose,
   settingsVisible = false,
+  // a scheduled email to show: { item, account, onEdit, onSendNow, onCancel }, or null
+  scheduled = null,
   // for Settings: the accounts, whose signatures it edits
   accounts = [],
   onChangeSignature,
@@ -70,6 +74,7 @@ function MainPane({
         sending={compose.sending}
         onChange={compose.onChange}
         onSend={compose.onSend}
+        onSchedule={compose.onSchedule}
         onDiscard={compose.onDiscard}
         onUndoAiDraft={compose.onUndoAiDraft}
         onShowAssistant={compose.onShowAssistant}
@@ -79,6 +84,8 @@ function MainPane({
     );
   } else if (settingsVisible) {
     content = <SettingsPage back={back} accounts={accounts} onChangeSignature={onChangeSignature} />;
+  } else if (scheduled) {
+    content = <ScheduledView key={scheduled.item.id} back={back} {...scheduled} />;
   } else if (selectedNote) {
     content = (
       <NoteDetail

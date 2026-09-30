@@ -117,8 +117,10 @@ export function newDraft(accountId, signature = '') {
     quoted: '', // the original, added under the body when sending
     originalMessageId: null, // the email being replied to or forwarded
     aiPrevious: null, // what the body/subject were before an AI draft was used, for Undo
-    // [{ key, name, size, type, file }] for files picked on this device, or
-    // [{ key, name, size, attachmentId }] for a forwarded original's
+    // [{ key, name, size, type, file }] for files picked on this device,
+    // [{ key, name, size, attachmentId }] for a forwarded original's, or
+    // [{ key, name, size, type, uploadId }] for files already uploaded (a
+    // scheduled email taken back for Edit)
     attachments: [],
     error: null,
   };
@@ -194,8 +196,29 @@ export function attachmentsFromFiles(files) {
   return [...files].map(file => ({ key: crypto.randomUUID(), name: file.name, size: file.size, type: file.type, file }));
 }
 
+// A scheduled email taken back for Edit (see GET /scheduled), as a draft. Its
+// body already holds any quoted original and signature; its uploaded files
+// come back as chips that point at the upload instead of a file.
+export function draftFromScheduled(email) {
+  return {
+    ...newDraft(email.accountId),
+    mode: email.replyToMessageId ? 'reply' : 'new',
+    to: email.to,
+    cc: email.cc,
+    bcc: email.bcc,
+    showCcBcc: Boolean(email.cc || email.bcc),
+    subject: email.subject,
+    body: email.body,
+    originalMessageId: email.replyToMessageId,
+    attachments: [
+      ...email.attachments.map(a => ({ key: a.uploadId, name: a.filename, size: a.size, type: a.mimeType, uploadId: a.uploadId })),
+      ...email.forwarded.map(a => ({ key: `original-${a.attachmentId}`, name: a.filename, size: a.size, attachmentId: a.attachmentId })),
+    ],
+  };
+}
+
 // An untouched signature on its own doesn't count as something written; a
 // file attached here does (a forward's own attachments don't).
 export function draftHasContent(draft) {
-  return Boolean(writtenText(draft).trim() || draft.attachments.some(a => a.file) || (draft.mode === 'new' && (draft.subject.trim() || draft.to.trim())));
+  return Boolean(writtenText(draft).trim() || draft.attachments.some(a => a.file || a.uploadId) || (draft.mode === 'new' && (draft.subject.trim() || draft.to.trim())));
 }

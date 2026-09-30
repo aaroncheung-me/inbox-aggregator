@@ -10,6 +10,11 @@ const { MAX_TOTAL_BYTES, isUsersUpload, loadUpload, removeUploads } = require('.
 
 // Sending waits this long, so Undo can take it back.
 const UNDO_SECONDS = 15;
+// Send later: from a minute to a year ahead
+const MIN_SCHEDULE_MS = 60 * 1000;
+const MAX_SCHEDULE_MS = 365 * 24 * 60 * 60 * 1000;
+// emails due within this get a timer; the cron (every 10 minutes) arms the rest in time
+const TIMER_AHEAD_MS = 15 * 60 * 1000;
 // mail still marked 'sending' after this long was cut off by a server restart
 const STUCK_SENDING_MS = 5 * 60 * 1000;
 const MAX_RECIPIENTS = 50;
@@ -97,9 +102,18 @@ function uploadIdsOf(email) {
   return (email?.attachments || []).map(a => a.uploadId);
 }
 
+// When a scheduled email (Send later) goes: at least a minute ahead, at most a year.
+function readSendAt(value) {
+  const when = new Date(value);
+  if (Number.isNaN(when.getTime())) throw new UserError('Choose a valid time to send it');
+  if (when.getTime() < Date.now() + MIN_SCHEDULE_MS) throw new UserError('Choose a time at least a minute from now');
+  if (when.getTime() > Date.now() + MAX_SCHEDULE_MS) throw new UserError('Emails can be scheduled up to a year ahead');
+  return when;
+}
+
 // Body: { accountId, to, cc, bcc, subject, body, replyToMessageId?, attachments?,
-// forwardedAttachmentIds? }. Checks it, stores it, and sends it UNDO_SECONDS
-// from now. Returns { id, sendAt }.
+// forwardedAttachmentIds?, sendAt? }. Checks it, stores it, and sends it
+// UNDO_SECONDS from now, or at sendAt (Send later). Returns { id, sendAt, scheduled }.
 async function queueEmail(userId, input) {
   const account = await getAccount(userId, Number(input.accountId) || 0);
   if (!account) throw new UserError('Choose which account to send from');
@@ -124,39 +138,112 @@ async function queueEmail(userId, input) {
     replyToMessageId = original.id;
   }
 
-  const sendAt = new Date(Date.now() + UNDO_SECONDS * 1000).toISOString();
+  const scheduled = input.sendAt != null;
+  const sendAt = (scheduled ? readSendAt(input.sendAt) : new Date(Date.now() + UNDO_SECONDS * 1000)).toISOString();
   const { data, error } = await supabase
     .from('outbox')
     .insert({
       user_id: userId,
       account_id: account.id,
       send_at: sendAt,
-      email: { to, cc, bcc, subject, body, replyToMessageId, attachments, forwarded },
+      email: { to, cc, bcc, subject, body, replyToMessageId, attachments, forwarded, scheduled },
     })
     .select('id')
     .single();
   if (error) throw error;
 
   schedule(data.id, sendAt);
-  return { id: data.id, sendAt };
+  return { id: data.id, sendAt, scheduled };
 }
 
-// Undo: takes the email back if it hasn't started sending. Returns false when it's too late.
-async function cancelEmail(userId, outboxId) {
+// Undo, or Cancel on a scheduled email: takes it back if it hasn't started
+// sending (or has failed). Returns false when it's too late, else the email as listScheduled
+// shapes it. keepFiles (Edit on a scheduled email): its uploaded files stay,
+// so sending it again reuses them; otherwise they're deleted (after an Undo
+// the app still has the files themselves).
+async function cancelEmail(userId, outboxId, { keepFiles = false } = {}) {
   const { data, error } = await supabase
     .from('outbox')
     .delete()
     .eq('id', outboxId)
     .eq('user_id', userId)
-    .eq('status', 'waiting')
-    .select('id, email');
+    .in('status', ['waiting', 'failed'])
+    .select('id, account_id, status, error, send_at, email');
   if (error) throw error;
   if (!data.length) return false;
 
   clearTimeout(timers.get(Number(outboxId)));
   timers.delete(Number(outboxId));
-  // the app still has the files, for when the email comes back to be edited
-  await removeUploads(uploadIdsOf(data[0].email));
+  if (!keepFiles) await removeUploads(uploadIdsOf(data[0].email));
+  return (await shapeScheduled(data))[0];
+}
+
+// "Ann <a@x.com>, b@y.com" from the stored [{ name, address }]
+function addressList(list) {
+  return (list || []).map(({ name, address }) => (name ? `"${name.replace(/"/g, '')}" <${address}>` : address)).join(', ');
+}
+
+// Outbox rows as the app shows a scheduled email: { id, accountId, sendAt, failed, to,
+// cc, bcc, subject, body, replyToMessageId, attachments: [{ uploadId, filename,
+// mimeType, size }], forwarded: [{ attachmentId, filename, size }] }.
+async function shapeScheduled(rows) {
+  const forwardedIds = rows.flatMap(r => r.email?.forwarded || []);
+  let names = new Map();
+  if (forwardedIds.length) {
+    const { data, error } = await supabase.from('attachments').select('id, filename, size_bytes').in('id', forwardedIds);
+    if (error) throw error;
+    names = new Map(data.map(a => [a.id, a]));
+  }
+  return rows.map(({ id, account_id, status, error, send_at, email }) => ({
+    id,
+    accountId: account_id,
+    sendAt: send_at,
+    failed: status === 'failed' ? (error || 'Sending failed') : null,
+    to: addressList(email.to),
+    cc: addressList(email.cc),
+    bcc: addressList(email.bcc),
+    subject: email.subject,
+    body: email.body,
+    replyToMessageId: email.replyToMessageId,
+    attachments: email.attachments || [],
+    forwarded: (email.forwarded || []).map(attachmentId => ({
+      attachmentId,
+      filename: names.get(attachmentId)?.filename || 'attachment',
+      size: names.get(attachmentId)?.size_bytes || 0,
+    })),
+  }));
+}
+
+// The user's scheduled emails still waiting to go, or that failed (with the
+// reason in failed), soonest first.
+async function listScheduled(userId) {
+  const { data, error } = await supabase
+    .from('outbox')
+    .select('id, account_id, status, error, send_at, email')
+    .eq('user_id', userId)
+    .in('status', ['waiting', 'failed'])
+    .eq('email->>scheduled', 'true')
+    .order('send_at');
+  if (error) throw error;
+  return shapeScheduled(data);
+}
+
+// "Send now" on a scheduled email. Returns false if it's no longer waiting.
+async function sendNow(userId, outboxId) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('outbox')
+    .update({ send_at: now })
+    .eq('id', outboxId)
+    .eq('user_id', userId)
+    .eq('status', 'waiting')
+    .select('id');
+  if (error) throw error;
+  if (!data.length) return false;
+
+  clearTimeout(timers.get(Number(outboxId)));
+  timers.delete(Number(outboxId));
+  schedule(Number(outboxId), now);
   return true;
 }
 
@@ -172,9 +259,13 @@ async function emailStatus(userId, outboxId) {
   return data;
 }
 
+// Arms a timer for an email due soon. Ones due later (Send later) are left to
+// sendDue, which the cron runs every 10 minutes: a timer weeks long would be
+// lost on a restart anyway, and setTimeout can't count past about 24 days.
 function schedule(outboxId, sendAt) {
   if (timers.has(outboxId)) return;
   const delay = Math.max(0, new Date(sendAt).getTime() - Date.now());
+  if (delay > TIMER_AHEAD_MS) return;
   timers.set(outboxId, setTimeout(() => {
     timers.delete(outboxId);
     deliver(outboxId).catch(err => console.error(`Sending outbox email ${outboxId} failed:`, err));
@@ -268,8 +359,10 @@ async function deliver(outboxId) {
   } catch (err) {
     console.error(`Sending outbox email ${row.id} failed:`, err);
     await markFailed(row.id, err instanceof UserError ? err.message : 'Sending failed. Nothing was sent; try again.');
-    // the app still has the files, and uploads them again if it's resent
-    await removeUploads(uploadIdsOf(row.email));
+    // After Send, the app still has the files and uploads them again for a
+    // resend. A scheduled email failed while the app wasn't watching, so its
+    // files stay for Edit (the Scheduled list shows it as failed).
+    if (!row.email.scheduled) await removeUploads(uploadIdsOf(row.email));
     return;
   }
   await removeUploads(uploadIdsOf(row.email));
@@ -295,14 +388,16 @@ async function sendDue() {
     .lt('send_at', new Date(Date.now() - STUCK_SENDING_MS).toISOString());
   if (stuckError) throw stuckError;
 
+  // only what's due soon: see schedule()
   const { data, error } = await supabase
     .from('outbox')
     .select('id, send_at')
     .eq('status', 'waiting')
+    .lte('send_at', new Date(Date.now() + TIMER_AHEAD_MS).toISOString())
     .order('send_at');
   if (error) throw error;
 
   for (const row of data) schedule(row.id, row.send_at);
 }
 
-module.exports = { queueEmail, cancelEmail, emailStatus, sendDue };
+module.exports = { queueEmail, cancelEmail, listScheduled, sendNow, emailStatus, sendDue };

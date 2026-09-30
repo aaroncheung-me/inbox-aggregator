@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { PHONE_LAYOUT } from '../layout';
 
 // What's on screen: the sidebar's tab, and the one thing the main pane shows
-// (an email, a note, the email being written, Settings, or else the chat). On
-// a phone, also which of the two screens is showing.
+// (an email, a note, the email being written, Settings, a scheduled email, or
+// else the chat). On a phone, also which of the two screens is showing.
 // (While an email is being written, its assistant can open emails and notes,
 // and the draft waits behind a "Back to your email" link.)
 export function useNavigation(initialTab) {
@@ -12,6 +12,7 @@ export function useNavigation(initialTab) {
   const [selectedNoteId, setSelectedNoteId] = useState(null);
   const [draftVisible, setDraftVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [selectedScheduledId, setSelectedScheduledId] = useState(null); // a Send later email
   // phone layout only: 'list' (sidebar) or 'main' (email or chat)
   const [phoneScreen, setPhoneScreen] = useState('list');
 
@@ -40,6 +41,7 @@ export function useNavigation(initialTab) {
   function openMessage(id) {
     setDraftVisible(false);
     setSettingsVisible(false);
+    setSelectedScheduledId(null);
     setSelectedNoteId(null);
     setSelectedMessageId(id);
     showMainScreen();
@@ -48,6 +50,7 @@ export function useNavigation(initialTab) {
   function openNote(id) {
     setDraftVisible(false);
     setSettingsVisible(false);
+    setSelectedScheduledId(null);
     setSelectedMessageId(null);
     setSelectedNoteId(id);
     setTab('notes');
@@ -57,6 +60,7 @@ export function useNavigation(initialTab) {
   function openChat() {
     setDraftVisible(false);
     setSettingsVisible(false);
+    setSelectedScheduledId(null);
     setSelectedNoteId(null);
     setSelectedMessageId(null);
     showMainScreen();
@@ -65,6 +69,7 @@ export function useNavigation(initialTab) {
   function showDraft() {
     setDraftVisible(true);
     setSettingsVisible(false);
+    setSelectedScheduledId(null);
     showMainScreen();
   }
 
@@ -72,7 +77,17 @@ export function useNavigation(initialTab) {
     setDraftVisible(false);
     setSelectedNoteId(null);
     setSelectedMessageId(null);
+    setSelectedScheduledId(null);
     setSettingsVisible(true);
+    showMainScreen();
+  }
+
+  function openScheduled(id) {
+    setDraftVisible(false);
+    setSettingsVisible(false);
+    setSelectedNoteId(null);
+    setSelectedMessageId(null);
+    setSelectedScheduledId(id);
     showMainScreen();
   }
 
@@ -83,6 +98,7 @@ export function useNavigation(initialTab) {
     selectedNoteId,
     draftVisible,
     settingsVisible,
+    selectedScheduledId,
     phoneScreen,
     showMainScreen,
     showListScreen,
@@ -91,6 +107,8 @@ export function useNavigation(initialTab) {
     openChat,
     showDraft,
     openSettings,
+    openScheduled,
+    closeScheduled: () => setSelectedScheduledId(null),
     hideDraft: () => setDraftVisible(false),
     closeMessage: () => setSelectedMessageId(null),
     closeNote: () => setSelectedNoteId(null),

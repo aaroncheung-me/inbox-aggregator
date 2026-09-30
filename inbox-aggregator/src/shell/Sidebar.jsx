@@ -5,6 +5,7 @@ import PaneBar from '../ui/PaneBar';
 import AccountsPanel from '../features/accounts/AccountsPanel';
 import PhoneAccountsBar from '../features/accounts/PhoneAccountsBar';
 import MessageList from '../features/email/MessageList';
+import ScheduledList from '../features/compose/ScheduledList';
 import SidebarTabs from './SidebarTabs';
 import NotesPanel from '../features/notes/NotesPanel';
 import { useMediaQuery } from '../hooks/useMediaQuery';
@@ -62,6 +63,10 @@ function Sidebar({
   tempAddresses = null,
   folder,
   onFolderChange,
+  // Send later emails not sent yet, in their own group above Sent
+  scheduled = [],
+  selectedScheduledId = null,
+  onOpenScheduled,
   // while an email is being written: { title, onBackToDraft, onDiscard, chat }.
   // The Inbox | Notes row becomes a Discard row, the list below becomes
   // the email's assistant, and the ask box at the top asks that assistant.
@@ -111,9 +116,16 @@ function Sidebar({
   );
 
   // received or sent mail, whichever the switch above the list shows; pinned
-  // emails sit in their own group above Received
+  // emails sit in their own group above Received, scheduled ones above Sent
   const folderList = (
     <>
+      {folder === 'sent' && scheduled.length > 0 && (
+        <>
+          <div className="list-group-label">Scheduled</div>
+          <ScheduledList scheduled={scheduled} accountColors={accountColors} selectedId={selectedScheduledId} onSelect={onOpenScheduled} />
+          <div className="list-group-label">Sent</div>
+        </>
+      )}
       {folder === 'inbox' && pinned.length > 0 && (
         <>
           <div className="list-group-label">Pinned</div>

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { askAssistant, deleteNote, getReplyInfo, sendEmail, getSendStatus, cancelSend, uploadAttachment } from '../../api';
+import { askAssistant, deleteNote, getReplyInfo, sendEmail, getSendStatus, cancelSend, uploadAttachment, takeBackScheduled } from '../../api';
 import { applyProgress, markNoteUndone } from '../assistant/useChat';
 import {
   newDraft,
   draftFromMessage,
+  draftFromScheduled,
   fullBody,
   draftHasContent,
   withAccount,
@@ -19,7 +20,8 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // beside it with its own chat, and the email just sent while it can be undone.
 // Whether the draft is on screen belongs to navigation (showDraft/hideDraft),
 // since the assistant beside it can open emails and notes in its place.
-export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDraft, showListScreen, reloadMessages, refreshNotes, refreshStatus }) {
+// onScheduled: reloads the Scheduled list after scheduling or taking one back.
+export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDraft, showListScreen, reloadMessages, refreshNotes, refreshStatus, onScheduled }) {
   const [draft, setDraft] = useState(null);
   const [chat, setChat] = useState([]);
   const [chatLoading, setChatLoading] = useState(false);
@@ -119,7 +121,8 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
     showListScreen();
   }
 
-  async function send() {
+  // sendAt: a Date, for Send later; otherwise it goes after the 15-second undo.
+  async function send(sendAt = null) {
     if (!draft || sending) return;
     const sent = draft;
     if (attachmentsSize(sent) > MAX_ATTACHMENTS_BYTES) {
@@ -128,14 +131,16 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
     }
     setSending(true);
     try {
-      // files picked here are uploaded first, one at a time; a forward's own
+      // files picked here are uploaded first, one at a time (ones already
+      // uploaded, from an edited scheduled email, are reused); a forward's own
       // attachments are fetched by the server from the mailbox
       const uploads = [];
-      for (const a of sent.attachments.filter(a => a.file)) {
-        const { uploadId } = await uploadAttachment(a.file);
+      for (const a of sent.attachments.filter(a => a.file || a.uploadId)) {
+        const uploadId = a.uploadId || (await uploadAttachment(a.file)).uploadId;
         uploads.push({ uploadId, filename: a.name, mimeType: a.type || 'application/octet-stream', size: a.size });
       }
-      const { id, sendAt } = await sendEmail({
+      const queued = await sendEmail({
+        ...(sendAt && { sendAt: sendAt.toISOString() }),
         attachments: uploads,
         forwardedAttachmentIds: sent.attachments.filter(a => a.attachmentId).map(a => a.attachmentId),
         accountId: sent.accountId,
@@ -147,9 +152,18 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
         // a forward starts a new conversation, so only replies are threaded
         replyToMessageId: sent.mode === 'reply' ? sent.originalMessageId : null,
       });
-      setOutgoing({ id, sendAt, draft: sent, chat, status: 'waiting', error: null, undoError: null });
+      const { id } = queued;
+      if (queued.scheduled) {
+        // nothing to follow: the bar says when it goes, with Undo, for a while
+        setOutgoing({ id, sendAt: queued.sendAt, draft: sent, chat, status: 'scheduled', error: null, undoError: null });
+        close();
+        onScheduled();
+        setTimeout(() => setOutgoing(prev => (prev?.id === id && prev.status === 'scheduled' ? null : prev)), 10000);
+        return;
+      }
+      setOutgoing({ id, sendAt: queued.sendAt, draft: sent, chat, status: 'waiting', error: null, undoError: null });
       close();
-      followSend(id, sendAt);
+      followSend(id, queued.sendAt);
     } catch (err) {
       setDraft(prev => (prev ? { ...prev, error: err.message } : prev));
     } finally {
@@ -189,7 +203,9 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
     // asked before cancelling, so the undone email can't be lost
     if (draft && draftHasContent(draft) && !window.confirm('Undo brings that email back in place of the one you are writing. Continue?')) return;
     try {
-      await cancelSend(id);
+      // files it only has as uploads (an edited scheduled email) must stay for the draft
+      await cancelSend(id, { keepFiles: unsent.attachments.some(a => a.uploadId) });
+      if (outgoing.status === 'scheduled') onScheduled();
     } catch (err) {
       setOutgoing(prev => (prev?.id === id ? { ...prev, undoError: err.message } : prev));
       return;
@@ -197,6 +213,16 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
     followedSend.current = null;
     setOutgoing(null);
     open(unsent, unsentChat, true);
+  }
+
+  // Edit on a scheduled email: takes it back and opens it on the writing
+  // screen. Returns false if the user kept the email they were writing.
+  async function editScheduled(item) {
+    if (draft && draftHasContent(draft) && !window.confirm('Discard the email you are writing?')) return false;
+    const email = await takeBackScheduled(item.id);
+    open(draftFromScheduled(email), [], true);
+    onScheduled();
+    return true;
   }
 
   // "Open email" on a send that failed: back to the writing screen, with the reason
@@ -307,5 +333,6 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
     applyAiDraft,
     undoAiDraft,
     undoChatNote,
+    editScheduled,
   };
 }

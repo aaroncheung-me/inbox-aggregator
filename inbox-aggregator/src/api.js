@@ -239,7 +239,7 @@ export async function getReplyInfo(messageId) {
 }
 
 // email: { accountId, to, cc, bcc, subject, body, replyToMessageId, attachments,
-// forwardedAttachmentIds } (see POST /send). The server
+// forwardedAttachmentIds, sendAt? } (see POST /send). The server
 // waits 15 seconds before sending, so it can be undone. Returns { id, sendAt }.
 export async function sendEmail(email) {
   const res = await apiFetch('/send', { method: 'POST', ...jsonBody(email) });
@@ -268,9 +268,33 @@ export async function getSendStatus(outboxId) {
 }
 
 // Undo. Throws "Too late to undo..." once it has started sending.
-export async function cancelSend(outboxId) {
-  const res = await apiFetch(`/send/${outboxId}`, { method: 'DELETE' });
+// keepFiles: its uploaded attachments stay, for a draft that still points at them.
+export async function cancelSend(outboxId, { keepFiles = false } = {}) {
+  const res = await apiFetch(`/send/${outboxId}${keepFiles ? '?edit=1' : ''}`, { method: 'DELETE' });
   if (!res.ok) await failWith(res, 'Could not undo, check your Sent folder');
+}
+
+// ---------- send later ----------
+
+// Scheduled emails not sent yet (and failed ones): [{ id, accountId, sendAt,
+// failed, to, cc, bcc, subject, body, replyToMessageId, attachments, forwarded }].
+export async function getScheduled() {
+  const res = await apiFetch('/scheduled');
+  if (!res.ok) throw new Error('Failed to load scheduled emails');
+  return res.json();
+}
+
+export async function sendScheduledNow(outboxId) {
+  const res = await apiFetch(`/send/${outboxId}/now`, { method: 'POST' });
+  if (!res.ok) await failWith(res, "Couldn't send it now, try again");
+}
+
+// Edit on a scheduled email: takes it back (its files stay uploaded) and
+// returns it, to reopen on the writing screen.
+export async function takeBackScheduled(outboxId) {
+  const res = await apiFetch(`/send/${outboxId}?edit=1`, { method: 'DELETE' });
+  if (!res.ok) await failWith(res, "Couldn't take it back, it may have been sent");
+  return res.json();
 }
 
 // ---------- temp addresses ----------

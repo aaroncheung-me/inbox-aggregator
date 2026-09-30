@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { DRAFT_TITLES, MAX_ATTACHMENTS_BYTES, attachmentsSize } from './compose';
 import { fileSize } from '../../format';
+import SendButton from './SendButton';
 import PaneBar from '../../ui/PaneBar';
 import Linkify from '../../ui/Linkify';
 
@@ -16,7 +17,8 @@ function hasFiles(e) {
 // Only Send or Ctrl+Enter sends; Enter in a field doesn't.
 // Files are attached with Attach or by dropping them anywhere on the page
 // (onAddFiles), and listed as chips under the fields (onRemoveAttachment(key)).
-function ComposeView({ draft, accounts, sending, onChange, onSend, onDiscard, onUndoAiDraft, onShowAssistant, onAddFiles, onRemoveAttachment }) {
+// onSchedule(date): Send later, from the menu beside Send.
+function ComposeView({ draft, accounts, sending, onChange, onSend, onSchedule, onDiscard, onUndoAiDraft, onShowAssistant, onAddFiles, onRemoveAttachment }) {
   const id = useId();
   const fileInput = useRef(null);
   const [dragging, setDragging] = useState(false);
@@ -74,6 +76,8 @@ function ComposeView({ draft, accounts, sending, onChange, onSend, onDiscard, on
   return (
     <>
       <PaneBar
+        // on a phone the title makes way for the buttons
+        className="compose-bar"
         left={<button className="btn btn-ghost btn-small phone-only" onClick={onShowAssistant}>Assistant</button>}
         title={DRAFT_TITLES[draft.mode]}
       >
@@ -88,7 +92,7 @@ function ComposeView({ draft, accounts, sending, onChange, onSend, onDiscard, on
             e.target.value = ''; // so the same file can be picked again after removing it
           }}
         />
-        <button className="btn btn-small" onClick={onSend} disabled={sending}>{sending ? 'Sending...' : 'Send'}</button>
+        <SendButton sending={sending} onSend={onSend} onSchedule={onSchedule} />
         <button className="btn btn-ghost btn-small phone-only" onClick={onDiscard}>Discard</button>
       </PaneBar>
       <div className={`pane-body${dragging ? ' compose-dropping' : ''}`} {...dropTarget}>

@@ -4,9 +4,9 @@
 // its actions on the right. The main action is the filled button, and Delete or
 // Discard is always the last one. It stays put while the page scrolls under it.
 // left: the back or switch button(s). children: the actions.
-function PaneBar({ left, title, children }) {
+function PaneBar({ left, title, children, className = '' }) {
   return (
-    <div className="pane-bar">
+    <div className={`pane-bar ${className}`}>
       <div className="pane-bar-inner">
         {left}
         {title && <span className="pane-title">{title}</span>}

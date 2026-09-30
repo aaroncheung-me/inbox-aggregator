@@ -101,6 +101,12 @@
     color: $accent;
   }
 
+  // the writing screen's bar has Assistant, Attach, Send ▾ and Discard; its
+  // title would only squeeze them
+  .compose-bar .pane-title {
+    display: none;
+  }
+
   // iOS zooms the page when focusing a field with text under 16px
   .ask-bar-row input,
   .temp-form input,

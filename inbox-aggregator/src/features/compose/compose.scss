@@ -165,6 +165,135 @@
   }
 }
 
+// ---------- send later ----------
+// Send with a ▾ beside it, joined into one button
+.send-button {
+  position: relative;
+  display: inline-flex;
+
+  .send-button-main {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .send-button-more {
+    padding-left: 7px;
+    padding-right: 7px;
+    border-left: 1px solid color-mix(in srgb, #{$on-accent} 30%, transparent);
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    background: $accent-hover;
+    font-size: 11px;
+  }
+}
+
+// the Send later menu, under the button, right-aligned with it
+.send-later-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  padding: $space-1;
+  border: 1px solid $border;
+  border-radius: 8px;
+  background: $surface;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+
+  button:not(.btn) {
+    display: flex;
+    justify-content: space-between;
+    gap: $space-3;
+    padding: $space-2 10px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: $text-primary;
+    font-size: 13px;
+    text-align: left;
+
+    &:hover {
+      background: $accent-soft;
+    }
+  }
+}
+
+.send-later-heading {
+  padding: 6px 10px $space-1;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: $text-secondary;
+}
+
+.send-later-when {
+  color: $text-secondary;
+}
+
+.send-later-divider {
+  height: 1px;
+  margin: $space-1 6px;
+  background: $border;
+}
+
+.send-later-pick {
+  display: flex;
+  gap: $space-2;
+  padding: $space-1 6px 6px;
+
+  input {
+    flex: 1;
+    min-width: 0;
+    padding: $space-1 $space-2;
+    border: 1px solid $border;
+    border-radius: 6px;
+    background: $bg;
+    color: $text-primary;
+    font-family: inherit;
+    font-size: 13px;
+  }
+}
+
+// an opened scheduled email: when it goes, or why it didn't
+.scheduled-notice {
+  margin-bottom: $space-3;
+  padding: $space-2 $space-3;
+  border-radius: 6px;
+  background: $accent-soft;
+  font-size: 13px;
+
+  strong {
+    font-weight: 600;
+  }
+
+  &.failed {
+    background: color-mix(in srgb, #{$danger} 10%, transparent);
+    color: $danger;
+  }
+}
+
+// its files, shown like the attachment chips on an email (not clickable here)
+.scheduled-file {
+  display: flex;
+  gap: $space-2;
+  align-items: baseline;
+  padding: $space-1 $space-2;
+  border: 1px solid $border;
+  border-radius: 4px;
+  background: $surface;
+  font-family: $font-mono;
+  font-size: 12px;
+}
+
+// "Failed" in place of the time, in the Scheduled group
+.date.scheduled-failed {
+  color: $danger;
+  font-weight: 600;
+}
+
 // files being dragged over the writing screen
 .compose-dropping {
   outline: 2px dashed $accent;
