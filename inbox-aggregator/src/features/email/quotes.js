@@ -98,6 +98,15 @@ export function trimQuotedHtml(root) {
     removed = true;
   }
 
+  // Help desks built on Zendesk repeat the whole ticket in every email, newest
+  // comment first; only that first one is new.
+  const comments = root.querySelectorAll('.zd-liquid-comment');
+  for (const comment of [...comments].slice(1)) {
+    if (!comment.isConnected) continue;
+    comment.remove();
+    removed = true;
+  }
+
   // no marked quote: look for the From / Sent / Subject header that starts one
   if (!removed) {
     const header = findHeaderBlock(root);

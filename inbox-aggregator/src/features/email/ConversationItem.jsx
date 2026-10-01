@@ -8,11 +8,11 @@ import EmailHtml from './EmailHtml';
 
 // One other email of a conversation, under the opened one: a row that opens
 // in place to show the whole email, and closes again.
-// email: { id, sender, snippet, received_at, labels } (from the conversation).
+// email: { id, sender, snippet, received_at, from_me } (from the conversation).
 // onOpen(id): makes it the opened email (to reply to it, for instance).
 function ConversationItem({ email, onOpen }) {
   const [open, setOpen] = useState(false);
-  const mine = (email.labels || []).includes('SENT');
+  const mine = email.from_me;
 
   return (
     <div className={`conversation-item${open ? ' open' : ''}`}>

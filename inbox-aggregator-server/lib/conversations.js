@@ -1,5 +1,5 @@
 const supabase = require('./supabase');
-const { getMessageAccess } = require('./accounts');
+const { getMessageAccess, listAccounts } = require('./accounts');
 const { connectorFor } = require('../connectors');
 
 // The other emails in an opened email's conversation, shown under it.
@@ -29,7 +29,7 @@ async function fillGmailThread(message, access) {
   return threadId;
 }
 
-// [{ id, account_id, sender, to_recipients, subject, snippet, received_at, labels }],
+// [{ id, account_id, sender, to_recipients, subject, snippet, received_at, labels, from_me }],
 // newest first, without the email itself, spam or trash. null if the email
 // doesn't exist or isn't this user's.
 async function getConversation(userId, messageId) {
@@ -59,7 +59,12 @@ async function getConversation(userId, messageId) {
     .order('received_at', { ascending: false })
     .limit(MAX_SHOWN);
   if (listError) throw listError;
-  return data;
+
+  // from_me: sent from any of the user's addresses. Read from the sender, since
+  // older mail was synced without labels (so no SENT to go by).
+  const own = (await listAccounts(userId)).map(a => a.email_address.toLowerCase());
+  const addressOf = sender => (/<([^>]+)>/.exec(sender || '')?.[1] || sender || '').trim().toLowerCase();
+  return data.map(m => ({ ...m, from_me: (m.labels || []).includes('SENT') || own.includes(addressOf(m.sender)) }));
 }
 
 module.exports = { getConversation };
