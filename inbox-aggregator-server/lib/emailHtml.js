@@ -19,20 +19,21 @@ function inlineImages(html, parts) {
   });
 }
 
-// Returns { html, inlinePartIds } (html is null for a plain-text email;
-// inlinePartIds are the attachments shown inside it), or null if the message
-// doesn't exist or isn't this user's.
+// Returns { html, text, inlinePartIds }: html is null for a plain-text email,
+// whose whole text is in text instead (the database keeps only the start);
+// inlinePartIds are the attachments shown inside the email. null if the
+// message doesn't exist or isn't this user's.
 async function getEmailHtml(userId, messageId) {
   const access = await getMessageAccess(userId, messageId);
   if (!access) return null;
 
-  const { html, inlineParts } = await connectorFor(access.provider).getHtml({
+  const { html, text, inlineParts } = await connectorFor(access.provider).getHtml({
     credentials: access.credentials,
     messageExternalId: access.externalId,
     maxHtmlBytes: MAX_HTML_BYTES,
     maxInlineBytes: MAX_INLINE_BYTES,
   });
-  if (!html) return { html: null, inlinePartIds: [] };
+  if (!html) return { html: null, text: text || null, inlinePartIds: [] };
 
   return { html: inlineImages(html, inlineParts), inlinePartIds: inlineParts.map(p => p.partId) };
 }

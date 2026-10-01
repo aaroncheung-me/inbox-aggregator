@@ -337,13 +337,19 @@ async function partBytes(gmail, messageId, part) {
 
 // The email's HTML plus the images it shows from inside the email (cid: links),
 // fetching only those it actually uses, up to maxInlineBytes in total.
-// Returns { html: null } for a plain-text email.
+// A plain-text email has html null and all of its text in text.
 async function getHtml({ credentials, messageExternalId, maxHtmlBytes, maxInlineBytes }) {
   const gmail = gmailClient(credentials);
   const { data: full } = await gmail.users.messages.get({ userId: 'me', id: messageExternalId, format: 'full' });
 
   const [htmlPart] = findParts(full.payload, p => p.mimeType === 'text/html' && !p.filename);
-  if (!htmlPart || (htmlPart.body?.size ?? 0) > maxHtmlBytes) return { html: null, inlineParts: [] };
+  if (!htmlPart || (htmlPart.body?.size ?? 0) > maxHtmlBytes) {
+    // a plain-text email: all of its text (the app stores only the start)
+    const [textPart] = findParts(full.payload, p => p.mimeType === 'text/plain' && !p.filename);
+    if (!textPart || (textPart.body?.size ?? 0) > maxHtmlBytes) return { html: null, text: null, inlineParts: [] };
+    const textCharset = /charset="?([^";\s]+)/i.exec(partHeader(textPart, 'content-type') || '')?.[1];
+    return { html: null, text: decodeText(await partBytes(gmail, messageExternalId, textPart), textCharset), inlineParts: [] };
+  }
 
   const charset = /charset="?([^";\s]+)/i.exec(partHeader(htmlPart, 'content-type') || '')?.[1];
   const html = decodeText(await partBytes(gmail, messageExternalId, htmlPart), charset);

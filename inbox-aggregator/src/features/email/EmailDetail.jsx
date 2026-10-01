@@ -7,9 +7,9 @@ import { downloadAttachment } from '../../api';
 import { useEmailHtml } from './useEmailHtml';
 import { useConversation } from './useConversation';
 import { useLoadImages } from '../settings/loadImages';
-import Linkify from '../../ui/Linkify';
 import EmailHtml from './EmailHtml';
 import ConversationItem from './ConversationItem';
+import PlainBody from './PlainBody';
 
 // Whether the email shows any images from the web (in img tags or its styles).
 function hasWebImages(html) {
@@ -117,12 +117,12 @@ function EmailDetail({ back, messageId, message, account, tempColors, loading, e
           </div>
         )}
         {formatted.html ? (
-          <EmailHtml html={formatted.html} loadImages={loadImages} />
+          <EmailHtml html={formatted.html} loadImages={loadImages} hideQuoted={conversation.length > 0} />
         ) : formatted.status === 'loading' ? (
           <div className="email-html-loading">Loading email...</div>
         ) : (
           // a plain-text email, or the formatted version couldn't be loaded
-          <div className="body"><Linkify text={message.body || message.snippet} /></div>
+          <PlainBody text={formatted.text || message.body || message.snippet} hideQuoted={conversation.length > 0} />
         )}
         {conversation.length > 0 && (
           <section className="conversation" aria-labelledby={`conversation-${message.id}`}>

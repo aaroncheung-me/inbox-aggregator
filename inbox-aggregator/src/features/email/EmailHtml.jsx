@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
+import { trimQuotedHtml } from './quotes';
 
 // An email's formatted (HTML) version, shown the way mail apps do: in a frame
 // that can't run scripts, submit forms or reach the app, sized to its content
@@ -7,6 +8,8 @@ import DOMPurify from 'dompurify';
 // scaled down to fit. It stays on white in dark mode too, since senders design
 // for white. loadImages false blocks images from the web (they tell senders
 // when an email is opened); images inside the email itself always show.
+// hideQuoted (in a conversation): the copy of earlier emails a reply carries is
+// left out, with "Show quoted text" under the frame to bring it back.
 
 // every link opens in a new tab, without telling the site where it came from
 DOMPurify.addHook('afterSanitizeAttributes', node => {
@@ -26,7 +29,8 @@ const BASE_STYLE = `
   pre { white-space: pre-wrap; }
 `;
 
-function frameDocument(html, loadImages) {
+// { srcDoc, quoted }: quoted says whether a quoted copy was left out.
+function frameDocument(html, loadImages, hideQuoted) {
   // the whole document, so the email's own <head> styles and <body> colors survive
   const root = DOMPurify.sanitize(html, {
     WHOLE_DOCUMENT: true,
@@ -34,18 +38,21 @@ function frameDocument(html, loadImages) {
     FORBID_TAGS: ['form', 'input', 'button', 'select', 'textarea'],
     ADD_ATTR: ['target'],
   });
+  const quoted = hideQuoted && trimQuotedHtml(root);
   // What the email may load. No scripts, frames or connections of any kind.
   const images = loadImages ? 'data: https: http:' : 'data:';
   const policy = `default-src 'none'; img-src ${images}; style-src 'unsafe-inline' https:; font-src https: data:`;
   root.querySelector('head').insertAdjacentHTML('afterbegin', '<meta charset="utf-8">'
     + `<meta http-equiv="Content-Security-Policy" content="${policy}">`
     + `<style>${BASE_STYLE}</style>`);
-  return `<!doctype html>${root.outerHTML}`;
+  return { srcDoc: `<!doctype html>${root.outerHTML}`, quoted };
 }
 
-function EmailHtml({ html, loadImages = true }) {
+function EmailHtml({ html, loadImages = true, hideQuoted = false }) {
   const frameRef = useRef(null);
-  const srcDoc = useMemo(() => frameDocument(html, loadImages), [html, loadImages]);
+  const [showQuoted, setShowQuoted] = useState(false);
+  const trim = hideQuoted && !showQuoted;
+  const { srcDoc, quoted } = useMemo(() => frameDocument(html, loadImages, trim), [html, loadImages, trim]);
 
   useEffect(() => {
     const frame = frameRef.current;
@@ -111,16 +118,23 @@ function EmailHtml({ html, loadImages = true }) {
   }, [srcDoc]);
 
   return (
-    <iframe
-      // a new frame when images are switched on, rather than swapping the document
-      // inside one that's still being measured
-      key={loadImages ? 'images' : 'no-images'}
-      ref={frameRef}
-      className="email-html"
-      title="Email content"
-      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-      srcDoc={srcDoc}
-    />
+    <>
+      <iframe
+        // a new frame when images or the quoted text are switched on, rather than
+        // swapping the document inside one that's still being measured
+        key={`${loadImages}-${trim}`}
+        ref={frameRef}
+        className="email-html"
+        title="Email content"
+        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+        srcDoc={srcDoc}
+      />
+      {(quoted || showQuoted) && (
+        <button type="button" className="quoted-toggle" onClick={() => setShowQuoted(prev => !prev)}>
+          {showQuoted ? 'Hide quoted text' : 'Show quoted text'}
+        </button>
+      )}
+    </>
   );
 }
 

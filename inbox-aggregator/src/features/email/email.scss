@@ -214,6 +214,21 @@
     color: $text-secondary;
   }
 
+  // "Show quoted text", under an email whose quoted copy is hidden
+  .quoted-toggle {
+    margin-top: $space-2;
+    padding: 2px $space-2;
+    border: 1px solid $border;
+    border-radius: 4px;
+    background: $surface;
+    color: $text-secondary;
+    font-size: 12px;
+
+    &:hover {
+      color: $text-primary;
+    }
+  }
+
   // the other emails of its conversation, one line each, under the email
   .conversation {
     margin-top: $space-6;

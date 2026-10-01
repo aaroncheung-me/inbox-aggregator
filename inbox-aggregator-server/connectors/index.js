@@ -10,7 +10,8 @@
 //   downloadAttachment({ credentials, messageExternalId, attachmentExternalId, maxBytes })
 //     -> Buffer
 //   getHtml({ credentials, messageExternalId, maxHtmlBytes, maxInlineBytes })
-//     -> { html, inlineParts: [{ partId, cid, mimeType, content }] }   html is null for plain-text email
+//     -> { html, text, inlineParts: [{ partId, cid, mimeType, content }] }
+//        html is null for plain-text email, which comes whole in text instead
 //   getThread({ credentials, messageExternalId })   Gmail only, optional
 //     -> { threadId, messageIds }                    its conversation, for emails stored without a thread id
 //   getReplyHeaders({ credentials, messageExternalId })

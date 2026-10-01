@@ -3,7 +3,7 @@ import { downloadAttachment, getMessage } from '../../api';
 import { fileSize, senderName, shortDate } from '../../format';
 import { preloadEmailHtml, useEmailHtml } from './useEmailHtml';
 import { useLoadImages } from '../settings/loadImages';
-import Linkify from '../../ui/Linkify';
+import PlainBody from './PlainBody';
 import EmailHtml from './EmailHtml';
 
 // One other email of a conversation, under the opened one: a row that opens
@@ -76,11 +76,11 @@ function ConversationEmail({ id, onOpen }) {
         </ul>
       )}
       {formatted.html ? (
-        <EmailHtml html={formatted.html} loadImages={loadImages} />
+        <EmailHtml html={formatted.html} loadImages={loadImages} hideQuoted />
       ) : formatted.status === 'loading' ? (
         <div className="email-html-loading">Loading email...</div>
       ) : (
-        <div className="body"><Linkify text={details.body || details.snippet} /></div>
+        <PlainBody text={formatted.text || details.body || details.snippet} hideQuoted />
       )}
     </div>
   );

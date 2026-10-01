@@ -333,12 +333,18 @@ async function downloadPart(client, uid, part, maxBytes) {
 
 // The email's HTML plus the images it shows from inside the email (cid: links),
 // downloading only those parts, never the whole message with its attachments.
-// Returns { html: null } for a plain-text email.
+// A plain-text email has html null and all of its text in text.
 async function getHtml({ credentials, messageExternalId, maxHtmlBytes, maxInlineBytes }) {
   return withStoredMessage(credentials, messageExternalId, async (client, uid) => {
     const message = await client.fetchOne(uid, { bodyStructure: true }, { uid: true });
     const [htmlNode] = findNodes(message?.bodyStructure, n => n.type === 'text/html' && n.disposition !== 'attachment');
-    if (!htmlNode || htmlNode.size > maxHtmlBytes) return { html: null, inlineParts: [] };
+    if (!htmlNode || htmlNode.size > maxHtmlBytes) {
+      // a plain-text email: all of its text (the app stores only the start)
+      const [textNode] = findNodes(message?.bodyStructure, n => n.type === 'text/plain' && n.disposition !== 'attachment');
+      if (!textNode || textNode.size > maxHtmlBytes) return { html: null, text: null, inlineParts: [] };
+      const text = (await downloadPart(client, uid, textNode.part || '1', maxHtmlBytes)).toString('utf-8');
+      return { html: null, text, inlineParts: [] };
+    }
 
     // download() converts text to UTF-8; a single-part message's body is part 1
     const html = (await downloadPart(client, uid, htmlNode.part || '1', maxHtmlBytes)).toString('utf-8');

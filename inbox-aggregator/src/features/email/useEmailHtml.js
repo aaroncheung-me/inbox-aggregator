@@ -18,8 +18,8 @@ function remember(messageId, result) {
 function load(messageId) {
   if (!inFlight.has(messageId)) {
     const request = getMessageHtml(messageId)
-      .then(({ html, inlinePartIds }) => {
-        const result = { status: 'ready', html, inlinePartIds };
+      .then(({ html, text, inlinePartIds }) => {
+        const result = { status: 'ready', html, text, inlinePartIds };
         remember(messageId, result);
         return result;
       })
@@ -36,8 +36,9 @@ export function preloadEmailHtml(messageId) {
 }
 
 // The open email's formatted version, fetched from the mail provider (a
-// fraction of a second). Returns { status, html, inlinePartIds }: status
-// 'loading', 'ready' or 'failed'. html is null for plain-text email and until it arrives.
+// fraction of a second). Returns { status, html, text, inlinePartIds }: status
+// 'loading', 'ready' or 'failed'. html is null for plain-text email and until it
+// arrives; a plain-text email's whole text is in text (the list keeps only the start).
 export function useEmailHtml(messageId) {
   const [loaded, setLoaded] = useState(null); // { messageId, status, html, inlinePartIds }
   const cached = cache.get(messageId);
@@ -50,13 +51,13 @@ export function useEmailHtml(messageId) {
         if (!cancelled) setLoaded({ messageId, ...result });
       })
       .catch(() => {
-        if (!cancelled) setLoaded({ messageId, status: 'failed', html: null, inlinePartIds: [] });
+        if (!cancelled) setLoaded({ messageId, status: 'failed', html: null, text: null, inlinePartIds: [] });
       });
     return () => { cancelled = true; };
   }, [messageId]);
 
   if (cached) return cached;
   // a result for a different email counts as still loading
-  if (loaded?.messageId !== messageId) return { status: 'loading', html: null, inlinePartIds: [] };
+  if (loaded?.messageId !== messageId) return { status: 'loading', html: null, text: null, inlinePartIds: [] };
   return loaded;
 }
