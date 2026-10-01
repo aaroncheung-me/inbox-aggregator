@@ -106,6 +106,10 @@
     width: 90px;
   }
 
+  .email-detail .conversation-body {
+    padding-left: $space-3;
+  }
+
   // the writing screen's bar has Assistant, Attach, Send ▾ and Discard; its
   // title would only squeeze them
   .compose-bar .pane-title {
