@@ -10,11 +10,7 @@ import { useLoadImages } from '../settings/loadImages';
 import EmailHtml from './EmailHtml';
 import ConversationItem from './ConversationItem';
 import PlainBody from './PlainBody';
-
-// Whether the email shows any images from the web (in img tags or its styles).
-function hasWebImages(html) {
-  return Boolean(html) && /<img[^>]+src\s*=\s*["']?https?:|url\(\s*["']?https?:|background\s*=\s*["']?https?:/i.test(html);
-}
+import { hasWebImages } from './webImages';
 
 // One email in the main pane. Its actions sit in the top bar: on a phone,
 // Reply plus a More menu for the rest, since the full row doesn't fit.
@@ -22,14 +18,19 @@ function hasWebImages(html) {
 // opened, known before its details arrive, so its formatted version loads alongside.
 // onReply(kind): kind is 'reply', 'replyAll' or 'forward'. onTogglePin pins or unpins it.
 // tempColors: address -> color of the temp addresses as the app has them now.
-// onOpenMessage(id): makes another email of its conversation (listed under
-// it, each opening in place) the opened one.
+// An email that's part of a conversation shows the whole conversation instead,
+// newest first, Outlook style: each email a row that opens in place, this one
+// open. onOpenMessage(id) makes another of them the opened email.
 function EmailDetail({ back, messageId, message, account, tempColors, loading, error, now, allNotes, onOpenNote, onOpenMessage, onCreateNote, onAiCreateNote, onReply, onTogglePin }) {
   const [writingNote, setWritingNote] = useState(false);
   const [download, setDownload] = useState(null); // { id, error? } of the attachment being saved
   const ready = Boolean(message && !loading && !error);
   const formatted = useEmailHtml(messageId);
+  // every email of its conversation, this one included; two or more means one is shown
   const conversation = useConversation(messageId);
+  const inConversation = conversation.length > 1;
+  // the oldest keeps its quoted copy: it may hold what came before the conversation
+  const oldestId = inConversation ? conversation[conversation.length - 1].id : null;
   // images from the web: per the setting, or shown for this email on request
   const loadImagesSetting = useLoadImages();
   const [showImages, setShowImages] = useState(false);
@@ -84,6 +85,7 @@ function EmailDetail({ back, messageId, message, account, tempColors, loading, e
         <div className="subject">
           {message.pinned_at && <span className="pinned-tag">Pinned</span>}
           {message.subject || '(no subject)'}
+          {inConversation && <span className="conversation-count">{conversation.length} emails</span>}
         </div>
         {message.temp_address && (
           <div className="temp-notice">
@@ -92,45 +94,47 @@ function EmailDetail({ back, messageId, message, account, tempColors, loading, e
             {' '}It and this email are deleted in {timeLeft(message.temp_address.expires_at, now)}.
           </div>
         )}
-        <div className="meta">
-          {message.sender} · {new Date(message.received_at).toLocaleString()}
-          <div className="meta-recipients">To: {message.to_recipients || '(nobody)'}</div>
-          {message.cc_recipients && <div className="meta-recipients">Cc: {message.cc_recipients}</div>}
-        </div>
-        {attachments.length > 0 && (
-          <ul className="attachments">
-            {attachments.map(a => (
-              <li key={a.id}>
-                <button type="button" onClick={() => save(a)} disabled={download?.id === a.id && !download.error}>
-                  <span className="attachment-name">{a.filename || '(unnamed attachment)'}</span>
-                  <span className="attachment-size">{download?.id === a.id && !download.error ? 'Saving...' : fileSize(a.size_bytes)}</span>
-                </button>
-              </li>
+        {inConversation ? (
+          <section className="conversation" aria-label="Conversation">
+            {conversation.map(m => (
+              <ConversationItem key={m.id} email={m} main={m.id === message.id} hideQuoted={m.id !== oldestId} onOpen={onOpenMessage} />
             ))}
-          </ul>
-        )}
-        {download?.error && <p className="form-error">{download.error}</p>}
-        {imagesHidden && (
-          <div className="images-hidden">
-            <span>Images from the web are hidden.</span>
-            <button type="button" className="btn btn-ghost btn-small" onClick={() => setShowImages(true)}>Show images</button>
-          </div>
-        )}
-        {formatted.html ? (
-          <EmailHtml html={formatted.html} loadImages={loadImages} hideQuoted={conversation.length > 0} />
-        ) : formatted.status === 'loading' ? (
-          <div className="email-html-loading">Loading email...</div>
-        ) : (
-          // a plain-text email, or the formatted version couldn't be loaded
-          <PlainBody text={formatted.text || message.body || message.snippet} hideQuoted={conversation.length > 0} />
-        )}
-        {conversation.length > 0 && (
-          <section className="conversation" aria-labelledby={`conversation-${message.id}`}>
-            <div className="conversation-heading" id={`conversation-${message.id}`}>
-              Also in this conversation ({conversation.length})
-            </div>
-            {conversation.map(m => <ConversationItem key={m.id} email={m} onOpen={onOpenMessage} />)}
           </section>
+        ) : (
+          <>
+            <div className="meta">
+              {message.sender} · {new Date(message.received_at).toLocaleString()}
+              <div className="meta-recipients">To: {message.to_recipients || '(nobody)'}</div>
+              {message.cc_recipients && <div className="meta-recipients">Cc: {message.cc_recipients}</div>}
+            </div>
+            {attachments.length > 0 && (
+              <ul className="attachments">
+                {attachments.map(a => (
+                  <li key={a.id}>
+                    <button type="button" onClick={() => save(a)} disabled={download?.id === a.id && !download.error}>
+                      <span className="attachment-name">{a.filename || '(unnamed attachment)'}</span>
+                      <span className="attachment-size">{download?.id === a.id && !download.error ? 'Saving...' : fileSize(a.size_bytes)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {download?.error && <p className="form-error">{download.error}</p>}
+            {imagesHidden && (
+              <div className="images-hidden">
+                <span>Images from the web are hidden.</span>
+                <button type="button" className="btn btn-ghost btn-small" onClick={() => setShowImages(true)}>Show images</button>
+              </div>
+            )}
+            {formatted.html ? (
+              <EmailHtml html={formatted.html} loadImages={loadImages} />
+            ) : formatted.status === 'loading' ? (
+              <div className="email-html-loading">Loading email...</div>
+            ) : (
+              // a plain-text email, or the formatted version couldn't be loaded
+              <PlainBody text={formatted.text || message.body || message.snippet} />
+            )}
+          </>
         )}
       </div>
     );

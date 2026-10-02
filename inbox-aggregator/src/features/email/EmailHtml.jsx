@@ -9,7 +9,7 @@ import { trimQuotedHtml } from './quotes';
 // for white. loadImages false blocks images from the web (they tell senders
 // when an email is opened); images inside the email itself always show.
 // hideQuoted (in a conversation): the copy of earlier emails a reply carries is
-// left out, with "Show quoted text" under the frame to bring it back.
+// left out, with a small "⋯" under the frame to bring it back (as in Gmail).
 
 // every link opens in a new tab, without telling the site where it came from
 DOMPurify.addHook('afterSanitizeAttributes', node => {
@@ -130,8 +130,15 @@ function EmailHtml({ html, loadImages = true, hideQuoted = false }) {
         srcDoc={srcDoc}
       />
       {(quoted || showQuoted) && (
-        <button type="button" className="quoted-toggle" onClick={() => setShowQuoted(prev => !prev)}>
-          {showQuoted ? 'Hide quoted text' : 'Show quoted text'}
+        <button
+          type="button"
+          className="quoted-toggle"
+          onClick={() => setShowQuoted(prev => !prev)}
+          aria-expanded={showQuoted}
+          aria-label={showQuoted ? 'Hide quoted text' : 'Show quoted text'}
+          title={showQuoted ? 'Hide quoted text' : 'Show quoted text'}
+        >
+          ⋯
         </button>
       )}
     </>

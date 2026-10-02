@@ -227,7 +227,7 @@ router.get('/messages/:messageId/html', async (req, res) => {
   }
 });
 
-// The other emails in its conversation, newest first (see lib/conversations.js).
+// Every email of its conversation, itself included, newest first (see lib/conversations.js).
 // On failure the email simply shows without them.
 router.get('/messages/:messageId/conversation', async (req, res) => {
   try {

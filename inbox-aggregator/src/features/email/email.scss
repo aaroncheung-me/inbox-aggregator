@@ -214,42 +214,51 @@
     color: $text-secondary;
   }
 
-  // "Show quoted text", under an email whose quoted copy is hidden
+  // "⋯" under an email whose quoted copy of earlier emails is hidden, as in Gmail
   .quoted-toggle {
+    display: block;
     margin-top: $space-2;
-    padding: 2px $space-2;
+    padding: 0 $space-2;
     border: 1px solid $border;
-    border-radius: 4px;
-    background: $surface;
+    border-radius: 10px;
+    background: $accent-soft;
     color: $text-secondary;
-    font-size: 12px;
+    font-size: 14px;
+    line-height: 16px;
+    letter-spacing: 1px;
 
     &:hover {
       color: $text-primary;
+      border-color: $text-secondary;
     }
   }
 
+  // "3 emails" beside the subject of a conversation
+  .conversation-count {
+    margin-left: $space-2;
+    font-size: 13px;
+    font-weight: 400;
+    color: $text-secondary;
+    white-space: nowrap;
+  }
+
   // the other emails of its conversation, one line each, under the email
+  // the whole conversation, newest first, each email a row that opens in place
   .conversation {
-    margin-top: $space-6;
+    margin-top: $space-3;
     border: 1px solid $border;
     border-radius: 8px;
     background: $surface;
     overflow: hidden;
   }
 
-  .conversation-heading {
-    padding: $space-2 $space-3;
-    border-bottom: 1px solid $border;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: $text-secondary;
-  }
-
   .conversation-item + .conversation-item {
     border-top: 1px solid $border;
+  }
+
+  // the opened email's own row stands out a little
+  .conversation-item.main > .conversation-row .conversation-from {
+    color: $accent;
   }
 
   .conversation-row {

@@ -3,19 +3,22 @@ import { downloadAttachment, getMessage } from '../../api';
 import { fileSize, senderName, shortDate } from '../../format';
 import { preloadEmailHtml, useEmailHtml } from './useEmailHtml';
 import { useLoadImages } from '../settings/loadImages';
+import { hasWebImages } from './webImages';
 import PlainBody from './PlainBody';
 import EmailHtml from './EmailHtml';
 
-// One other email of a conversation, under the opened one: a row that opens
-// in place to show the whole email, and closes again.
+// One email of a conversation: a row (who it's from, the start of its text,
+// when) that opens in place to show the whole email, and closes again.
 // email: { id, sender, snippet, received_at, from_me } (from the conversation).
+// main: the opened email (starts open; the others offer Open to become it).
+// hideQuoted: leave out the copy of earlier emails it carries (all but the
+// oldest, whose copy may hold what came before the conversation).
 // onOpen(id): makes it the opened email (to reply to it, for instance).
-function ConversationItem({ email, onOpen }) {
-  const [open, setOpen] = useState(false);
-  const mine = email.from_me;
+function ConversationItem({ email, main = false, hideQuoted, onOpen }) {
+  const [open, setOpen] = useState(main);
 
   return (
-    <div className={`conversation-item${open ? ' open' : ''}`}>
+    <div className={`conversation-item${open ? ' open' : ''}${main ? ' main' : ''}`}>
       <button
         type="button"
         className="conversation-row"
@@ -24,20 +27,24 @@ function ConversationItem({ email, onOpen }) {
         onPointerEnter={e => { if (e.pointerType === 'mouse') preloadEmailHtml(email.id); }}
       >
         <span className="conversation-toggle" aria-hidden="true">{open ? '▾' : '▸'}</span>
-        <span className="conversation-from">{mine ? 'Me' : senderName(email.sender)}</span>
+        <span className="conversation-from">{email.from_me ? 'Me' : senderName(email.sender)}</span>
         <span className="conversation-snippet">{open ? '' : email.snippet || email.subject || '(no text)'}</span>
         <span className="conversation-date">{shortDate(email.received_at)}</span>
       </button>
-      {open && <ConversationEmail id={email.id} onOpen={() => onOpen(email.id)} />}
+      {open && (
+        <ConversationEmail id={email.id} hideQuoted={hideQuoted} onOpen={main ? null : () => onOpen(email.id)} />
+      )}
     </div>
   );
 }
 
 // The opened row: who it's between, its attachments, and the email itself.
-function ConversationEmail({ id, onOpen }) {
+function ConversationEmail({ id, hideQuoted, onOpen }) {
   const [details, setDetails] = useState(null); // the full email, or { error }
   const formatted = useEmailHtml(id);
-  const loadImages = useLoadImages();
+  const loadImagesSetting = useLoadImages();
+  const [showImages, setShowImages] = useState(false);
+  const loadImages = loadImagesSetting || showImages;
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +68,7 @@ function ConversationEmail({ id, onOpen }) {
           <div className="meta-recipients">To: {details.to_recipients || '(nobody)'}</div>
           {details.cc_recipients && <div className="meta-recipients">Cc: {details.cc_recipients}</div>}
         </div>
-        <button type="button" className="btn btn-ghost btn-small" onClick={onOpen}>Open</button>
+        {onOpen && <button type="button" className="btn btn-ghost btn-small" onClick={onOpen}>Open</button>}
       </div>
       {attachments.length > 0 && (
         <ul className="attachments">
@@ -75,12 +82,18 @@ function ConversationEmail({ id, onOpen }) {
           ))}
         </ul>
       )}
+      {!loadImages && hasWebImages(formatted.html) && (
+        <div className="images-hidden">
+          <span>Images from the web are hidden.</span>
+          <button type="button" className="btn btn-ghost btn-small" onClick={() => setShowImages(true)}>Show images</button>
+        </div>
+      )}
       {formatted.html ? (
-        <EmailHtml html={formatted.html} loadImages={loadImages} hideQuoted />
+        <EmailHtml html={formatted.html} loadImages={loadImages} hideQuoted={hideQuoted} />
       ) : formatted.status === 'loading' ? (
         <div className="email-html-loading">Loading email...</div>
       ) : (
-        <PlainBody text={formatted.text || details.body || details.snippet} hideQuoted />
+        <PlainBody text={formatted.text || details.body || details.snippet} hideQuoted={hideQuoted} />
       )}
     </div>
   );

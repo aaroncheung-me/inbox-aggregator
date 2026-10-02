@@ -2,7 +2,7 @@ const supabase = require('./supabase');
 const { getMessageAccess, listAccounts } = require('./accounts');
 const { connectorFor } = require('../connectors');
 
-// The other emails in an opened email's conversation, shown under it.
+// The conversation an opened email belongs to, shown in its place.
 // Conversations are per account: Gmail's thread id, or for IMAP the first
 // Message-ID in the References chain (see connectors).
 
@@ -29,9 +29,10 @@ async function fillGmailThread(message, access) {
   return threadId;
 }
 
-// [{ id, account_id, sender, to_recipients, subject, snippet, received_at, labels, from_me }],
-// newest first, without the email itself, spam or trash. null if the email
-// doesn't exist or isn't this user's.
+// Every email of its conversation, the opened one included, newest first,
+// without spam or trash: [{ id, account_id, sender, to_recipients, subject,
+// snippet, received_at, labels, from_me }]. [] when it has no thread id. null
+// if the email doesn't exist or isn't this user's.
 async function getConversation(userId, messageId) {
   const { data: message, error } = await supabase
     .from('messages')
@@ -54,7 +55,6 @@ async function getConversation(userId, messageId) {
     .select(COLUMNS)
     .eq('account_id', message.account_id)
     .eq('thread_id', threadId)
-    .neq('id', message.id)
     .not('labels', 'ov', '{SPAM,TRASH}')
     .order('received_at', { ascending: false })
     .limit(MAX_SHOWN);
