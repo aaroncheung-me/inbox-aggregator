@@ -27,7 +27,8 @@ const MODES = {
 // placeholders: { ai?, search? } replace the defaults (while writing, the box
 //   asks that email's assistant; on Notes, it searches notes).
 // resetKey: when it changes, the box empties (another tab, or a search closed).
-// topAction: { label, onClick }, a button beside the mode switch (New email).
+// topAction: { label, onClick, className? }, a button beside the mode switch
+// (New email, or Discard while writing one).
 function AskBar({ mode, onModeChange, onAsk, onSearch, asking, autoFocus = false, placeholders = {}, resetKey, topAction }) {
   const [input, setInput] = useState('');
   const [seenResetKey, setSeenResetKey] = useState(resetKey);
@@ -79,7 +80,7 @@ function AskBar({ mode, onModeChange, onAsk, onSearch, asking, autoFocus = false
           ))}
         </div>
         {topAction && (
-          <button type="button" className="btn btn-small" onClick={topAction.onClick}>
+          <button type="button" className={`btn btn-small ${topAction.className || ''}`} onClick={topAction.onClick}>
             {topAction.label}
           </button>
         )}

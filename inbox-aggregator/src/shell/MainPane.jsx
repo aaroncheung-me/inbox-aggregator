@@ -14,7 +14,7 @@ import OpenTabs from './OpenTabs';
 // email, the assistant, or else "Nothing open". Each page starts with the same
 // top bar (PaneBar); on a phone without the header its left end leads back to
 // the list.
-// tabs: { tabs, activeKey, onShow, onClose, onCloseActive, onKeep, onNewEmail }
+// tabs: { tabs, activeKey, onShow, onClose, onCloseActive, onKeep }
 //   (see OpenTabs; onKeep keeps a temporary tab once its page is used).
 // noteActions: { onSaveBody, onDelete, onAddAddon, onUpdateAddon, onRemoveAddon, onOpenNote, onCreate, onAiCreate }
 // aiHeadsUp: { noteId, message } from the last AI save, shown on that note.
@@ -59,6 +59,11 @@ function MainPane({
   // phone only: the ask box and Inbox | Notes, kept above every page but the writing screen
   phoneHeader = null,
 }) {
+  // a press on the page's scrollbar lands on the scrolling box itself: that's scrolling
+  const keepUnlessScrollbar = e => {
+    if (!e.target.classList?.contains('pane-body')) tabs.onKeep();
+  };
+
   // on a phone the header's tabs lead back to the lists instead
   const back = !phoneHeader && <button className="pane-back phone-only" onClick={onBackToList}>← {backLabel}</button>;
 
@@ -181,13 +186,14 @@ function MainPane({
 
   return (
     <div className="main-pane">
-      <OpenTabs tabs={tabs.tabs} activeKey={tabs.activeKey} onShow={tabs.onShow} onClose={tabs.onClose} onNewEmail={tabs.onNewEmail} />
+      <OpenTabs tabs={tabs.tabs} activeKey={tabs.activeKey} onShow={tabs.onShow} onClose={tabs.onClose} />
       {/* the new note is a full screen of its own, like the writing screen */}
       {!newNote && phoneHeader}
       <PaneClose.Provider value={closable ? tabs.onCloseActive : null}>
         <PaneInteraction.Provider value={tabs.onKeep}>
-          {/* anything done on the page keeps its tab (display: contents, so it doesn't change the layout) */}
-          <div className="main-pane-page" onPointerDown={tabs.onKeep} onWheel={tabs.onKeep} onKeyDown={tabs.onKeep} onTouchStart={tabs.onKeep}>
+          {/* clicking or typing on the page keeps its tab; scrolling doesn't, it's
+              too easy to do by accident (display: contents, so no layout change) */}
+          <div className="main-pane-page" onPointerDown={keepUnlessScrollbar} onKeyDown={tabs.onKeep}>
             {content}
           </div>
         </PaneInteraction.Provider>

@@ -20,8 +20,9 @@ DOMPurify.addHook('afterSanitizeAttributes', node => {
   }
 });
 
-// what counts as using the email (its events stay inside the frame)
-const INTERACTIONS = ['pointerdown', 'wheel', 'keydown', 'touchstart'];
+// what counts as using the email (its events stay inside the frame); not
+// scrolling, which is too easy to do by accident
+const INTERACTIONS = ['pointerdown', 'keydown'];
 
 const MIN_SCALE = 0.4; // narrower than this would be unreadable, so it scrolls sideways instead
 
@@ -99,7 +100,7 @@ function EmailHtml({ html, loadImages = true, hideQuoted = false }) {
         fit();
         contentObserver = new ResizeObserver(() => fitLater(fitHeight));
         contentObserver.observe(doc.body);
-        for (const type of INTERACTIONS) doc.addEventListener(type, reportInteraction, { passive: true });
+        for (const type of INTERACTIONS) doc.addEventListener(type, reportInteraction);
       } else {
         waiting = requestAnimationFrame(watchWhenReady);
       }

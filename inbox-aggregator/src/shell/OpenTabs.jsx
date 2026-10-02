@@ -1,10 +1,9 @@
-// Desktop: the strip of open tabs along the top of the main pane, with New
-// email at its right end (right above Discard on the writing screen). A
-// temporary tab (not yet used) shows in italics. Closing a tab is its ×, or a
-// middle click.
+// Desktop: the strip of open tabs along the top of the main pane, all the
+// same width. A temporary tab (not yet used) shows in italics. Closing a tab
+// is its ×, or a middle click.
 // tabs: [{ key, kind, label, color, kept }], kind 'email' (with its account
 // color), 'note', 'draft' or another page.
-function OpenTabs({ tabs, activeKey, onShow, onClose, onNewEmail }) {
+function OpenTabs({ tabs, activeKey, onShow, onClose }) {
   return (
     <div className="open-tabs desktop-only">
       <div className="open-tabs-list" role="tablist" aria-label="Open">
@@ -30,7 +29,6 @@ function OpenTabs({ tabs, activeKey, onShow, onClose, onNewEmail }) {
           </div>
         ))}
       </div>
-      <button className="btn btn-small open-tabs-new" onClick={onNewEmail}>New email</button>
     </div>
   );
 }

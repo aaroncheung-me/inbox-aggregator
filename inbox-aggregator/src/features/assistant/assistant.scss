@@ -11,10 +11,12 @@
   border-bottom: 1px solid $border;
 }
 
+// one height whichever button sits on the right (New email, or Discard)
 .ask-bar-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  min-height: 30px;
 }
 
 .ask-bar-row {

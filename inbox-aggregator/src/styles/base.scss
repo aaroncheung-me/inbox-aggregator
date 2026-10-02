@@ -258,9 +258,7 @@ button {
   align-items: flex-end;
   gap: $space-3;
   min-height: 37px;
-  // the right end lines up with the page's top bar, so New email sits right
-  // above Discard on the writing screen
-  padding: $space-1 max(#{$space-6}, calc((100% - #{$pane-column}) / 2)) 0 $space-3;
+  padding: $space-1 $space-3 0;
   border-bottom: 1px solid $border;
   background: $accent-soft;
 }
@@ -274,10 +272,10 @@ button {
   scrollbar-width: none;
 }
 
+// all the same width, shrinking together when there are many
 .open-tab {
-  flex: 0 1 auto;
-  min-width: 90px;
-  max-width: 220px;
+  flex: 0 1 200px;
+  min-width: 100px;
   display: flex;
   align-items: center;
   margin-bottom: -1px;
@@ -362,11 +360,6 @@ button {
   }
 }
 
-.open-tabs-new {
-  flex-shrink: 0;
-  align-self: center;
-  margin: 2px 0 $space-1;
-}
 
 // MainPane's wrapper that notices the page being used; it adds no box
 .main-pane-page {

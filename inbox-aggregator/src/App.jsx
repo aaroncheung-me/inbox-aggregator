@@ -360,7 +360,6 @@ function App({ userEmail, onSignOut }) {
             nav.showListScreen();
           },
           onKeep: () => { if (nav.active) nav.keepTab(nav.active.key); },
-          onNewEmail: compose.newEmail,
         }}
         newNote={nav.newNoteVisible && {
           text: newNoteText,

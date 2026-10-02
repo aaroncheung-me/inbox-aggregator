@@ -181,8 +181,11 @@ function Sidebar({
         autoFocus={focusAskBox}
         placeholders={askPlaceholders({ drafting, tab })}
         resetKey={askResetKey}
-        // desktop: New email is at the end of the main pane's tabs
-        topAction={drafting || !isPhone ? undefined : { label: 'New email', onClick: onNewEmail }}
+        // New email; while writing it becomes Discard in the same spot (on a
+        // phone, Discard is in this screen's bar above)
+        topAction={!drafting
+          ? { label: 'New email', onClick: onNewEmail }
+          : isPhone ? undefined : { label: 'Discard', onClick: drafting.onDiscard, className: 'btn-ghost' }}
       />
       {/* phone layout only: on desktop the chat is always beside the list */}
       {waitingDraft && (
