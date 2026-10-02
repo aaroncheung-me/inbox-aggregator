@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { dueReminderCount } from './features/notes/notes';
+import { dueReminderCount, noteTitle } from './features/notes/notes';
 import { DRAFT_TITLES } from './features/compose/compose';
 import { useNow } from './hooks/useNow';
 import { useNavigation } from './shell/useNavigation';
@@ -88,7 +88,7 @@ function App({ userEmail, onSignOut }) {
   const chat = useChat({
     refreshNotes: notes.refresh,
     refreshStatus: status.refresh,
-    onNoteDeleted: noteId => { if (nav.selectedNoteId === noteId) nav.closeNote(); },
+    onNoteDeleted: noteId => nav.closeNote(noteId),
   });
   const scheduled = useScheduled({ reloadMessages: list.reload });
   const compose = useCompose({
@@ -104,6 +104,9 @@ function App({ userEmail, onSignOut }) {
     onScheduled: scheduled.refresh,
   });
   const { draft } = compose;
+  // the email being written is showing (its tab, or on a phone its two screens):
+  // the sidebar is then its assistant
+  const drafting = draft && nav.draftVisible;
 
   // Form-based connects (IMAP) finish without leaving the page, so sync right away.
   // Sign-in connects (Gmail) come back through a redirect instead, see readConnectResult.
@@ -117,19 +120,61 @@ function App({ userEmail, onSignOut }) {
   // include the link to that email). Either way the new note opens, so it's
   // clear it was made and any mistakes are visible straight away. (Going back to
   // the email later reloads it, so its new sticky note shows there too.)
+  // (A note saved from the phone's new-note page takes that page's place.)
+  function showSavedNote(noteId) {
+    if (nav.newNoteVisible) nav.closeNewNote();
+    nav.openNote(noteId, { kept: true });
+  }
+
   async function handleCreateNote(body, addons) {
-    nav.openNote(await notes.create(body, addons));
+    showSavedNote(await notes.create(body, addons));
   }
 
   async function handleAiSaveNote(body, addons) {
-    nav.openNote(await notes.aiSave(body, addons));
+    showSavedNote(await notes.aiSave(body, addons));
   }
 
   async function handleDeleteNote(noteId) {
     await notes.remove(noteId, () => {
-      nav.closeNote();
+      nav.closeNote(noteId);
       nav.showListScreen();
     });
+  }
+
+  // Opens an email in a tab, named after its subject. hint: what the caller
+  // knows of it ({ subject, account_id }), else it's looked up in the lists.
+  function openEmailTab(id, hint) {
+    const known = hint
+      || [...list.messages, ...list.pinned, ...(search.search?.results || [])].find(m => m.id === id)
+      || (openEmail.message?.id === id ? openEmail.message : null);
+    nav.openMessage(id, {
+      label: known ? known.subject || '(no subject)' : 'Email',
+      color: accounts.accounts.find(a => a.id === known?.account_id)?.color,
+    });
+  }
+
+  // what each tab is called (emails keep the name they opened with)
+  function tabLabel(t) {
+    if (t.kind === 'email') return t.label;
+    if (t.kind === 'note') return noteTitle(notes.notes.find(n => n.id === t.id)?.body || '') || 'Note';
+    if (t.kind === 'draft') return draft ? [DRAFT_TITLES[draft.mode], draft.subject].filter(Boolean).join(': ') : 'Email';
+    if (t.kind === 'scheduled') return scheduled.scheduled.find(s => s.id === t.id)?.subject || 'Scheduled email';
+    return { chat: 'Assistant', settings: 'Settings', newnote: 'New note' }[t.kind];
+  }
+
+  // × on a tab: the email being written and the new note are discarded (the
+  // email asks first, if it has anything in it)
+  function closeTab(key) {
+    const t = nav.tabs.find(other => other.key === key);
+    if (t?.kind === 'draft') compose.discard();
+    else if (t?.kind === 'newnote') discardNewNote();
+    else nav.closeTab(key);
+  }
+
+  function discardNewNote() {
+    setNewNoteText('');
+    nav.closeNewNote();
+    nav.showListScreen();
   }
 
   const noteActions = {
@@ -138,7 +183,7 @@ function App({ userEmail, onSignOut }) {
     onAddAddon: notes.addAddon,
     onUpdateAddon: notes.updateAddon,
     onRemoveAddon: notes.removeAddon,
-    onOpenNote: nav.openNote,
+    onOpenNote: id => nav.openNote(id),
     onCreate: handleCreateNote,
     onAiCreate: handleAiSaveNote,
   };
@@ -153,7 +198,7 @@ function App({ userEmail, onSignOut }) {
   // Search looks through whatever the tab lists: emails on Inbox (and while
   // writing), notes on Notes.
   function handleSearch(query) {
-    if (nav.tab === 'notes' && !draft) setNoteQuery(query);
+    if (nav.tab === 'notes' && !drafting) setNoteQuery(query);
     else search.run(query);
   }
 
@@ -181,7 +226,7 @@ function App({ userEmail, onSignOut }) {
     mode: askMode,
     onModeChange: setAskMode,
     resetKey: `${nav.tab}:${askResets}`,
-    placeholders: askPlaceholders({ drafting: draft, tab: nav.tab }),
+    placeholders: askPlaceholders({ drafting, tab: nav.tab }),
   };
 
   // Received | Sent share one list; Sent also shows the scheduled emails, freshly loaded
@@ -206,7 +251,7 @@ function App({ userEmail, onSignOut }) {
           />
         )}
         // while writing an email, the ask box asks that email's assistant
-        onAsk={draft ? compose.ask : handleAsk}
+        onAsk={drafting ? compose.ask : handleAsk}
         askMode={askMode}
         onAskModeChange={setAskMode}
         askResetKey={askBarProps.resetKey}
@@ -214,7 +259,7 @@ function App({ userEmail, onSignOut }) {
         focusNoteBox={launchAction === 'new-note'}
         chatCount={chat.history.length}
         onOpenChat={nav.openChat}
-        asking={draft ? compose.chatLoading : chat.loading}
+        asking={drafting ? compose.chatLoading : chat.loading}
         lastSyncedAt={oldestSyncTime(accounts.accounts)}
         onSync={sync.sync}
         syncing={sync.syncing}
@@ -222,7 +267,7 @@ function App({ userEmail, onSignOut }) {
         tempColors={temp.colors}
         pinned={list.pinned}
         selectedId={nav.selectedMessageId}
-        onSelect={nav.openMessage}
+        onSelect={id => openEmailTab(id)}
         hasMore={list.messages.length < list.total}
         loadingMore={list.loadingMore}
         onLoadMore={list.loadMore}
@@ -252,7 +297,7 @@ function App({ userEmail, onSignOut }) {
         notes={notes.notes}
         now={now}
         selectedNoteId={nav.selectedNoteId}
-        onSelectNote={nav.openNote}
+        onSelectNote={id => nav.openNote(id)}
         onCreateNote={handleCreateNote}
         onAiCreateNote={handleAiSaveNote}
         onMoveNote={notes.move}
@@ -262,6 +307,8 @@ function App({ userEmail, onSignOut }) {
         onClearNoteQuery={clearNoteQuery}
         onStartNote={nav.openNewNote}
         onNewEmail={compose.newEmail}
+        // phone: an email being written while something else shows, to go back to
+        waitingDraft={draft && !nav.draftVisible ? { title: tabLabel({ kind: 'draft' }), onShow: nav.showDraft } : null}
         tempAddresses={{
           temp: temp.temp,
           now,
@@ -271,7 +318,7 @@ function App({ userEmail, onSignOut }) {
           onChangeColor: temp.changeColor,
           onDelete: temp.remove,
         }}
-        drafting={draft && {
+        drafting={drafting && {
           title: DRAFT_TITLES[draft.mode],
           onBackToDraft: nav.showDraft,
           onDiscard: compose.discard,
@@ -282,8 +329,8 @@ function App({ userEmail, onSignOut }) {
               pending={compose.chatPending}
               error={compose.chatError}
               onUseDraft={compose.applyAiDraft}
-              onOpenMessage={nav.openMessage}
-              onOpenNote={nav.openNote}
+              onOpenMessage={openEmailTab}
+              onOpenNote={id => nav.openNote(id)}
               onUndoCreatedNote={compose.undoChatNote}
             />
           ),
@@ -301,17 +348,25 @@ function App({ userEmail, onSignOut }) {
         chatPending={chat.pending}
         chatError={chat.error}
         chatVisible={nav.chatVisible}
-        onOpenChat={nav.openChat}
         onNewChat={chat.newChat}
+        tabs={{
+          tabs: nav.tabs.map(t => ({ ...t, label: tabLabel(t) })),
+          activeKey: nav.active?.key ?? null,
+          onShow: nav.showTab,
+          onClose: closeTab,
+          // phone: × on the page goes back to the list
+          onCloseActive: () => {
+            if (nav.active) nav.closeTab(nav.active.key);
+            nav.showListScreen();
+          },
+          onKeep: () => { if (nav.active) nav.keepTab(nav.active.key); },
+          onNewEmail: compose.newEmail,
+        }}
         newNote={nav.newNoteVisible && {
           text: newNoteText,
           onTextChange: setNewNoteText,
           onBack: nav.showListScreen,
-          onDiscard: () => {
-            setNewNoteText('');
-            nav.closeNewNote();
-            nav.showListScreen();
-          },
+          onDiscard: discardNewNote,
         }}
         selectedNote={selectedNote}
         notes={notes.notes}
@@ -319,17 +374,17 @@ function App({ userEmail, onSignOut }) {
         noteActions={noteActions}
         aiHeadsUp={notes.aiHeadsUp}
         onDismissAiHeadsUp={notes.dismissAiHeadsUp}
-        onOpenMessage={nav.openMessage}
+        onOpenMessage={openEmailTab}
         onUndoCreatedNote={chat.undoCreatedNote}
         onBackToList={nav.showListScreen}
         // while writing, the list screen is the email's assistant
-        backLabel={draft ? 'Assistant' : nav.tab === 'notes' ? 'Notes' : 'Inbox'}
+        backLabel={drafting ? 'Assistant' : nav.tab === 'notes' ? 'Notes' : 'Inbox'}
         onReply={compose.reply}
         // Phone: emails, notes and answers keep the list screen's top (the ask
         // box and Inbox | Notes), so moving between screens doesn't change the
-        // layout; the tabs lead back to the lists. Not while writing, which
-        // has its own bar.
-        phoneHeader={!draft && (
+        // layout; the tabs lead back to the lists. Not on the writing screen,
+        // which has its own bar.
+        phoneHeader={!nav.draftVisible && (
           <div className="phone-header phone-only">
             <AskBar
               {...askBarProps}
@@ -350,15 +405,15 @@ function App({ userEmail, onSignOut }) {
         scheduled={scheduledItem && {
           item: scheduledItem,
           account: accounts.accounts.find(a => a.id === scheduledItem.accountId),
-          onEdit: async () => { if (await compose.editScheduled(scheduledItem)) nav.closeScheduled(); },
+          onEdit: async () => { if (await compose.editScheduled(scheduledItem)) nav.closeScheduled(scheduledItem.id); },
           onSendNow: async () => {
             await scheduled.sendNow(scheduledItem.id);
-            nav.closeScheduled();
+            nav.closeScheduled(scheduledItem.id);
             setNotice({ type: 'success', text: 'Sending it now' });
           },
           onCancel: async () => {
             await scheduled.cancel(scheduledItem.id);
-            nav.closeScheduled();
+            nav.closeScheduled(scheduledItem.id);
           },
         }}
         accounts={accounts.accounts}

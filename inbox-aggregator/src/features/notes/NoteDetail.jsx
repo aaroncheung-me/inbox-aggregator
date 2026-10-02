@@ -197,7 +197,7 @@ function NoteDetail({
               <LinkedSection title="Linked emails" count={emailLinks.length}>
                 {emailLinks.map(link => (
                   <li key={link.addonId} className="linked-row">
-                    <button className="linked-main" onClick={() => onOpenMessage(link.message.id)} title="Open this email">
+                    <button className="linked-main" onClick={() => onOpenMessage(link.message.id, link.message)} title="Open this email">
                       <span className="linked-title">{link.message.subject || '(no subject)'}</span>
                       <span className="linked-meta">{senderName(link.message.sender)} · {shortDate(link.message.received_at)}</span>
                     </button>

@@ -83,6 +83,8 @@ function Sidebar({
   // The Inbox | Notes row becomes "Writing: ...", the list below becomes
   // the email's assistant, and the ask box at the top asks that assistant.
   drafting = null,
+  // phone: an email being written while something else shows, { title, onShow }
+  waitingDraft = null,
 }) {
   // Desktop: sync status and accounts sit above the inbox list, sign-out below it.
   // Phone: all of that folds into one bar under the list, so the list screen opens uncluttered.
@@ -179,9 +181,15 @@ function Sidebar({
         autoFocus={focusAskBox}
         placeholders={askPlaceholders({ drafting, tab })}
         resetKey={askResetKey}
-        topAction={drafting ? undefined : { label: 'New email', onClick: onNewEmail }}
+        // desktop: New email is at the end of the main pane's tabs
+        topAction={drafting || !isPhone ? undefined : { label: 'New email', onClick: onNewEmail }}
       />
       {/* phone layout only: on desktop the chat is always beside the list */}
+      {waitingDraft && (
+        <button className="phone-open-chat phone-only" onClick={waitingDraft.onShow}>
+          Back to writing: {waitingDraft.title} →
+        </button>
+      )}
       {!drafting && chatCount > 0 && (
         <button className="phone-open-chat phone-only" onClick={onOpenChat}>
           View AI conversation ({chatCount}) →

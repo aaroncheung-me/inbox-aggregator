@@ -99,7 +99,7 @@ function ChatPanel({
   history, loading, pending = null, error, onOpenMessage, onOpenNote, onUndoCreatedNote,
   emptyContent = null, onUseDraft = null, workingLabel = 'Searching your email and notes...',
 }) {
-  const openSource = source => (source.kind === 'note' ? onOpenNote(source.id) : onOpenMessage(source.id));
+  const openSource = source => (source.kind === 'note' ? onOpenNote(source.id) : onOpenMessage(source.id, source));
 
   if (history.length === 0 && !loading && !error && emptyContent) {
     return <div className="chat-panel chat-empty">{emptyContent}</div>;

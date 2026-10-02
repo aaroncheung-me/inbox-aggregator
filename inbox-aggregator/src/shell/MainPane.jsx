@@ -6,13 +6,16 @@ import SettingsPage from '../features/settings/SettingsPage';
 import ScheduledView from '../features/compose/ScheduledView';
 import NoteComposer from '../features/notes/NoteComposer';
 import PaneBar from '../ui/PaneBar';
+import { PaneClose, PaneInteraction } from '../ui/paneContext';
+import OpenTabs from './OpenTabs';
 
-// Shows one of: the email being written, the phone's new note, Settings, a
-// scheduled email, the selected note, the selected email, the assistant (once
-// asked or opened), or else "Nothing open". Each starts with the same top bar
-// (PaneBar), whose left end is worked out here: on a phone, back to the list;
-// on desktop, back to the email being written or to the assistant, when
-// there's one to go back to.
+// The open tabs (desktop), then the page of the one showing: the email being
+// written, the phone's new note, Settings, a scheduled email, a note, an
+// email, the assistant, or else "Nothing open". Each page starts with the same
+// top bar (PaneBar); on a phone without the header its left end leads back to
+// the list.
+// tabs: { tabs, activeKey, onShow, onClose, onCloseActive, onKeep, onNewEmail }
+//   (see OpenTabs; onKeep keeps a temporary tab once its page is used).
 // noteActions: { onSaveBody, onDelete, onAddAddon, onUpdateAddon, onRemoveAddon, onOpenNote, onCreate, onAiCreate }
 // aiHeadsUp: { noteId, message } from the last AI save, shown on that note.
 // compose: the email being written, or null: { draft, visible, accounts, sending,
@@ -36,8 +39,8 @@ function MainPane({
   chatPending,
   chatError,
   chatVisible = false,
-  onOpenChat,
   onNewChat,
+  tabs,
   // phone: the full-screen new note, { text, onTextChange, onBack, onDiscard }, or null
   newNote = null,
   onOpenMessage,
@@ -56,24 +59,14 @@ function MainPane({
   // phone only: the ask box and Inbox | Notes, kept above every page but the writing screen
   phoneHeader = null,
 }) {
-  let desktopBack = null;
-  if (compose) {
-    desktopBack = { label: '← Back to email', onClick: compose.onShow };
-  } else if (selectedMessageId != null && !selectedNote && chatHistory.length > 0) {
-    desktopBack = { label: '← Assistant', onClick: onOpenChat };
-  }
-  const back = (
-    <>
-      {/* on a phone the header's tabs lead back to the lists instead */}
-      {!phoneHeader && <button className="pane-back phone-only" onClick={onBackToList}>← {backLabel}</button>}
-      {desktopBack && (
-        <button className="pane-back desktop-only" onClick={desktopBack.onClick}>{desktopBack.label}</button>
-      )}
-    </>
-  );
+  // on a phone the header's tabs lead back to the lists instead
+  const back = !phoneHeader && <button className="pane-back phone-only" onClick={onBackToList}>← {backLabel}</button>;
 
+  // pages closed with × (the writing screen and the new note have Discard)
+  let closable = true;
   let content;
   if (compose?.visible) {
+    closable = false;
     content = (
       <ComposeView
         draft={compose.draft}
@@ -90,6 +83,7 @@ function MainPane({
       />
     );
   } else if (newNote) {
+    closable = false;
     content = (
       <NoteComposer
         page={{
@@ -171,6 +165,7 @@ function MainPane({
       </>
     );
   } else {
+    closable = false;
     content = (
       <>
         <PaneBar left={back} />
@@ -186,9 +181,17 @@ function MainPane({
 
   return (
     <div className="main-pane">
+      <OpenTabs tabs={tabs.tabs} activeKey={tabs.activeKey} onShow={tabs.onShow} onClose={tabs.onClose} onNewEmail={tabs.onNewEmail} />
       {/* the new note is a full screen of its own, like the writing screen */}
       {!newNote && phoneHeader}
-      {content}
+      <PaneClose.Provider value={closable ? tabs.onCloseActive : null}>
+        <PaneInteraction.Provider value={tabs.onKeep}>
+          {/* anything done on the page keeps its tab (display: contents, so it doesn't change the layout) */}
+          <div className="main-pane-page" onPointerDown={tabs.onKeep} onWheel={tabs.onKeep} onKeyDown={tabs.onKeep} onTouchStart={tabs.onKeep}>
+            {content}
+          </div>
+        </PaneInteraction.Provider>
+      </PaneClose.Provider>
     </div>
   );
 }

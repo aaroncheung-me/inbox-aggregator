@@ -1,23 +1,29 @@
 import { useEffect, useState } from 'react';
 import { getMessage, pinMessage } from '../../api';
 
-// The open email's full details, fetched whenever one is selected. A response
-// for an email that's no longer selected (clicked away before it arrived) is
-// dropped, and loading and errors are read off the last fetch, so a stale
-// response can't show under a newer selection.
+const KEEP_LOADED = 20; // emails remembered, so going back to a tab shows at once
+
+const remembering = entry => prev => [...prev.filter(e => e.id !== entry.id), entry].slice(-KEEP_LOADED);
+
+// The open email's full details, fetched whenever one is selected. Emails
+// fetched before stay remembered (a few), so switching back to one shows it
+// straight away while it's fetched again (its sticky notes may have changed).
+// A response for an email that's no longer selected still updates its memory,
+// but can't show under a newer selection.
 export function useOpenEmail(selectedMessageId, { reloadMessages, onNotice }) {
-  // the last email fetched: { id, message, error }
-  const [loaded, setLoaded] = useState(null);
-  const current = loaded?.id === selectedMessageId ? loaded : null;
+  // fetched emails, most recent last: [{ id, message, error }]
+  const [loaded, setLoaded] = useState([]);
+  const current = loaded.find(entry => entry.id === selectedMessageId) || null;
   const message = current?.message ?? null;
 
   useEffect(() => {
     if (selectedMessageId == null) return;
-    let stale = false;
     getMessage(selectedMessageId)
-      .then(fetched => { if (!stale) setLoaded({ id: selectedMessageId, message: fetched, error: null }); })
-      .catch(err => { if (!stale) setLoaded({ id: selectedMessageId, message: null, error: err.message }); });
-    return () => { stale = true; };
+      .then(fetched => setLoaded(remembering({ id: selectedMessageId, message: fetched, error: null })))
+      // a failed refresh keeps what was already showing
+      .catch(err => setLoaded(prev => (prev.some(e => e.id === selectedMessageId && e.message)
+        ? prev
+        : remembering({ id: selectedMessageId, message: null, error: err.message })(prev))));
   }, [selectedMessageId]);
 
   // Pins or unpins the open email, then reloads the list so it moves in or out
@@ -26,7 +32,7 @@ export function useOpenEmail(selectedMessageId, { reloadMessages, onNotice }) {
     if (!message) return;
     try {
       const { pinned_at } = await pinMessage(message.id, !message.pinned_at);
-      setLoaded(prev => (prev?.id === message.id ? { ...prev, message: { ...prev.message, pinned_at } } : prev));
+      setLoaded(prev => prev.map(e => (e.id === message.id ? { ...e, message: { ...e.message, pinned_at } } : e)));
       await reloadMessages();
     } catch (err) {
       onNotice({ type: 'error', text: err.message });

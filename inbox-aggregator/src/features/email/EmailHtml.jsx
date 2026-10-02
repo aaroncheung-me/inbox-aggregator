@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
 import { trimQuotedHtml } from './quotes';
+import { PaneInteraction } from '../../ui/paneContext';
 
 // An email's formatted (HTML) version, shown the way mail apps do: in a frame
 // that can't run scripts, submit forms or reach the app, sized to its content
@@ -18,6 +19,9 @@ DOMPurify.addHook('afterSanitizeAttributes', node => {
     node.setAttribute('rel', 'noopener noreferrer');
   }
 });
+
+// what counts as using the email (its events stay inside the frame)
+const INTERACTIONS = ['pointerdown', 'wheel', 'keydown', 'touchstart'];
 
 const MIN_SCALE = 0.4; // narrower than this would be unreadable, so it scrolls sideways instead
 
@@ -53,12 +57,16 @@ function EmailHtml({ html, loadImages = true, hideQuoted = false }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const trim = hideQuoted && !showQuoted;
   const { srcDoc, quoted } = useMemo(() => frameDocument(html, loadImages, trim), [html, loadImages, trim]);
+  const onInteract = useContext(PaneInteraction);
+  const interact = useRef(onInteract);
+  useEffect(() => { interact.current = onInteract; });
 
   useEffect(() => {
     const frame = frameRef.current;
     let contentObserver = null;
     let waiting = 0;
     let pendingFit = 0;
+    const reportInteraction = () => interact.current?.();
 
     // the frame as tall as the content (its size already reflects any scaling)
     function fitHeight() {
@@ -91,6 +99,7 @@ function EmailHtml({ html, loadImages = true, hideQuoted = false }) {
         fit();
         contentObserver = new ResizeObserver(() => fitLater(fitHeight));
         contentObserver.observe(doc.body);
+        for (const type of INTERACTIONS) doc.addEventListener(type, reportInteraction, { passive: true });
       } else {
         waiting = requestAnimationFrame(watchWhenReady);
       }

@@ -62,7 +62,12 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
     setChatPending(null);
   }
 
+  // One email is written at a time: with one already started, this goes back to it.
   function newEmail() {
+    if (draft) {
+      showDraft();
+      return;
+    }
     const account = accounts.find(a => a.show_in_inbox) || accounts[0];
     if (!account) {
       onNotice({ type: 'error', text: 'Connect an email account first' });

@@ -13,7 +13,7 @@ import EmailHtml from './EmailHtml';
 // main: the opened email (starts open; the others offer Open to become it).
 // hideQuoted: leave out the copy of earlier emails it carries (all but the
 // oldest, whose copy may hold what came before the conversation).
-// onOpen(id): makes it the opened email (to reply to it, for instance).
+// onOpen(id, email): makes it the opened email (to reply to it, for instance).
 function ConversationItem({ email, main = false, hideQuoted, onOpen }) {
   const [open, setOpen] = useState(main);
 
@@ -32,7 +32,7 @@ function ConversationItem({ email, main = false, hideQuoted, onOpen }) {
         <span className="conversation-date">{shortDate(email.received_at)}</span>
       </button>
       {open && (
-        <ConversationEmail id={email.id} hideQuoted={hideQuoted} onOpen={main ? null : () => onOpen(email.id)} />
+        <ConversationEmail id={email.id} hideQuoted={hideQuoted} onOpen={main ? null : () => onOpen(email.id, email)} />
       )}
     </div>
   );
