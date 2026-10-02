@@ -4,12 +4,15 @@ import EmailDetail from '../features/email/EmailDetail';
 import NoteDetail from '../features/notes/NoteDetail';
 import SettingsPage from '../features/settings/SettingsPage';
 import ScheduledView from '../features/compose/ScheduledView';
+import NoteComposer from '../features/notes/NoteComposer';
 import PaneBar from '../ui/PaneBar';
 
-// Shows one of: the email being written, Settings, a scheduled email, the
-// selected note, the selected email, or the assistant chat. Each starts with the same top bar (PaneBar), whose left
-// end is worked out here: on a phone, back to the list; on desktop, back to the
-// email being written or to the assistant, when there's one to go back to.
+// Shows one of: the email being written, the phone's new note, Settings, a
+// scheduled email, the selected note, the selected email, the assistant (once
+// asked or opened), or else "Nothing open". Each starts with the same top bar
+// (PaneBar), whose left end is worked out here: on a phone, back to the list;
+// on desktop, back to the email being written or to the assistant, when
+// there's one to go back to.
 // noteActions: { onSaveBody, onDelete, onAddAddon, onUpdateAddon, onRemoveAddon, onOpenNote, onCreate, onAiCreate }
 // aiHeadsUp: { noteId, message } from the last AI save, shown on that note.
 // compose: the email being written, or null: { draft, visible, accounts, sending,
@@ -32,9 +35,13 @@ function MainPane({
   chatLoading,
   chatPending,
   chatError,
+  chatVisible = false,
+  onOpenChat,
+  onNewChat,
+  // phone: the full-screen new note, { text, onTextChange, onBack, onDiscard }, or null
+  newNote = null,
   onOpenMessage,
   onUndoCreatedNote,
-  onCloseMessage,
   onBackToList,
   backLabel,
   onReply,
@@ -53,7 +60,7 @@ function MainPane({
   if (compose) {
     desktopBack = { label: '← Back to email', onClick: compose.onShow };
   } else if (selectedMessageId != null && !selectedNote && chatHistory.length > 0) {
-    desktopBack = { label: '← Assistant', onClick: onCloseMessage };
+    desktopBack = { label: '← Assistant', onClick: onOpenChat };
   }
   const back = (
     <>
@@ -80,6 +87,22 @@ function MainPane({
         onShowAssistant={compose.onShowAssistant}
         onAddFiles={compose.onAddFiles}
         onRemoveAttachment={compose.onRemoveAttachment}
+      />
+    );
+  } else if (newNote) {
+    content = (
+      <NoteComposer
+        page={{
+          back: <button className="pane-back" onClick={newNote.onBack}>← Notes</button>,
+          onDiscard: newNote.onDiscard,
+        }}
+        notes={notes}
+        onSave={noteActions.onCreate}
+        onAiSave={noteActions.onAiCreate}
+        placeholder="Write a note..."
+        autoFocus
+        initialText={newNote.text}
+        onTextChange={newNote.onTextChange}
       />
     );
   } else if (settingsVisible) {
@@ -126,10 +149,14 @@ function MainPane({
         onTogglePin={onTogglePin}
       />
     );
-  } else {
+  } else if (chatVisible) {
     content = (
       <>
-        <PaneBar left={back} title="Assistant" />
+        <PaneBar left={back} title="Assistant">
+          {chatHistory.length > 0 && (
+            <button className="btn btn-ghost btn-small" onClick={onNewChat} disabled={chatLoading}>New chat</button>
+          )}
+        </PaneBar>
         <div className="pane-body">
           <ChatPanel
             history={chatHistory}
@@ -143,11 +170,24 @@ function MainPane({
         </div>
       </>
     );
+  } else {
+    content = (
+      <>
+        <PaneBar left={back} />
+        <div className="pane-body">
+          <div className="nothing-open">
+            <p className="nothing-open-title">Nothing open</p>
+            <p>Pick an email or a note, or ask the AI from the bar.</p>
+          </div>
+        </div>
+      </>
+    );
   }
 
   return (
     <div className="main-pane">
-      {phoneHeader}
+      {/* the new note is a full screen of its own, like the writing screen */}
+      {!newNote && phoneHeader}
       {content}
     </div>
   );

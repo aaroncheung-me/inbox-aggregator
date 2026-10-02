@@ -8,7 +8,7 @@ import { accountsSummary } from '../../format';
 // temp addresses as rows under the accounts.
 // tempAddresses: { temp, now, onCreate, onExtend, onDelete } for TempAddresses.
 function AccountsPanel({ accounts, onToggleAccount, onChangeColor, onAccountConnected, tempAddresses }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [creatingTemp, setCreatingTemp] = useState(false);
   const tempCount = tempAddresses?.temp?.addresses.length || 0;
 

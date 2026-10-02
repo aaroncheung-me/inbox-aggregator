@@ -116,3 +116,22 @@
 .ask-bar-error {
   margin: 0;
 }
+
+// ---------- results bar (above search results) ----------
+.results-bar {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  min-height: 41px;
+  padding: $space-1 $space-4;
+  border-bottom: 1px solid $border;
+  font-size: 12px;
+  color: $text-secondary;
+
+  .results-bar-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

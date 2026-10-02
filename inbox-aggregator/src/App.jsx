@@ -19,6 +19,8 @@ import MainPane from './shell/MainPane';
 import CreditsBanner from './shell/CreditsBanner';
 import DraftAssistant from './features/compose/DraftAssistant';
 import AskBar from './features/assistant/AskBar';
+import { askPlaceholders } from './features/assistant/askPlaceholders';
+import { PHONE_LAYOUT } from './layout';
 import SidebarTabs from './shell/SidebarTabs';
 import SendingBar from './features/compose/SendingBar';
 import './styles/app.scss';
@@ -49,6 +51,8 @@ function readLaunchAction() {
 }
 
 const launchAction = readLaunchAction();
+// on a phone, "New note" opens the full-screen new note; on desktop, the Notes box
+const startOnNewNote = launchAction === 'new-note' && window.matchMedia(PHONE_LAYOUT).matches;
 
 // The app: each feature keeps its own state in a hook (features/*/use*.js,
 // shell/use*.js), and this wires them together and to the two panes.
@@ -59,7 +63,13 @@ function App({ userEmail, onSignOut }) {
 
   const status = useProviderStatus();
   // the "New note" shortcut opens straight onto Notes
-  const nav = useNavigation(launchAction === 'new-note' ? 'notes' : 'inbox');
+  const nav = useNavigation(launchAction === 'new-note' ? 'notes' : 'inbox', { startOnNewNote });
+  // the ask bar: AI or Search (shared by the sidebar's bar and the phone's
+  // copy), and a count that empties its box when a search is closed
+  const [askMode, setAskMode] = useState('ai');
+  const [askResets, setAskResets] = useState(0);
+  const [noteQuery, setNoteQuery] = useState(null); // a search on the Notes tab
+  const [newNoteText, setNewNoteText] = useState(''); // the phone's new note, kept while it's closed with back
   const list = useMessageList();
   const accounts = useAccounts({ onNotice: setNotice, reloadMessages: list.reload });
   const temp = useTempAddresses({ onNotice: setNotice, reloadMessages: list.reload });
@@ -140,11 +150,39 @@ function App({ userEmail, onSignOut }) {
     chat.ask(question, openMessageId);
   }
 
-  // search results are emails, so they show on the Inbox tab
+  // Search looks through whatever the tab lists: emails on Inbox (and while
+  // writing), notes on Notes.
   function handleSearch(query) {
-    nav.setTab('inbox');
-    search.run(query);
+    if (nav.tab === 'notes' && !draft) setNoteQuery(query);
+    else search.run(query);
   }
+
+  function clearSearch() {
+    search.clear();
+    setAskResets(n => n + 1);
+  }
+
+  function clearNoteQuery() {
+    setNoteQuery(null);
+    setAskResets(n => n + 1);
+  }
+
+  // a search belongs to its tab, so switching tabs closes it (and the box
+  // empties, see askResetKey). On a phone the current tab leads back to its
+  // list, results included.
+  function handleTabChange(next) {
+    if (next === nav.tab) return;
+    nav.setTab(next);
+    search.clear();
+    setNoteQuery(null);
+  }
+
+  const askBarProps = {
+    mode: askMode,
+    onModeChange: setAskMode,
+    resetKey: `${nav.tab}:${askResets}`,
+    placeholders: askPlaceholders({ drafting: draft, tab: nav.tab }),
+  };
 
   // Received | Sent share one list; Sent also shows the scheduled emails, freshly loaded
   function handleFolderChange(next) {
@@ -169,6 +207,9 @@ function App({ userEmail, onSignOut }) {
         )}
         // while writing an email, the ask box asks that email's assistant
         onAsk={draft ? compose.ask : handleAsk}
+        askMode={askMode}
+        onAskModeChange={setAskMode}
+        askResetKey={askBarProps.resetKey}
         focusAskBox={launchAction === 'ask'}
         focusNoteBox={launchAction === 'new-note'}
         chatCount={chat.history.length}
@@ -198,10 +239,10 @@ function App({ userEmail, onSignOut }) {
         settingsOpen={nav.settingsVisible}
         search={search.search}
         onSearch={handleSearch}
-        onClearSearch={search.clear}
+        onClearSearch={clearSearch}
         onLoadMoreSearch={search.loadMore}
         tab={nav.tab}
-        onTabChange={nav.setTab}
+        onTabChange={handleTabChange}
         folder={list.folder}
         onFolderChange={handleFolderChange}
         scheduled={scheduled.scheduled}
@@ -217,6 +258,9 @@ function App({ userEmail, onSignOut }) {
         onMoveNote={notes.move}
         onSuggestOrganizing={notes.suggest}
         onApplyOrganizing={notes.applyOrganizing}
+        noteQuery={noteQuery}
+        onClearNoteQuery={clearNoteQuery}
+        onStartNote={nav.openNewNote}
         onNewEmail={compose.newEmail}
         tempAddresses={{
           temp: temp.temp,
@@ -256,6 +300,19 @@ function App({ userEmail, onSignOut }) {
         chatLoading={chat.loading}
         chatPending={chat.pending}
         chatError={chat.error}
+        chatVisible={nav.chatVisible}
+        onOpenChat={nav.openChat}
+        onNewChat={chat.newChat}
+        newNote={nav.newNoteVisible && {
+          text: newNoteText,
+          onTextChange: setNewNoteText,
+          onBack: nav.showListScreen,
+          onDiscard: () => {
+            setNewNoteText('');
+            nav.closeNewNote();
+            nav.showListScreen();
+          },
+        }}
         selectedNote={selectedNote}
         notes={notes.notes}
         now={now}
@@ -264,7 +321,6 @@ function App({ userEmail, onSignOut }) {
         onDismissAiHeadsUp={notes.dismissAiHeadsUp}
         onOpenMessage={nav.openMessage}
         onUndoCreatedNote={chat.undoCreatedNote}
-        onCloseMessage={nav.closeMessage}
         onBackToList={nav.showListScreen}
         // while writing, the list screen is the email's assistant
         backLabel={draft ? 'Assistant' : nav.tab === 'notes' ? 'Notes' : 'Inbox'}
@@ -276,6 +332,7 @@ function App({ userEmail, onSignOut }) {
         phoneHeader={!draft && (
           <div className="phone-header phone-only">
             <AskBar
+              {...askBarProps}
               onAsk={handleAsk}
               onSearch={query => { handleSearch(query); nav.showListScreen(); }}
               asking={chat.loading}
@@ -283,7 +340,7 @@ function App({ userEmail, onSignOut }) {
             />
             <SidebarTabs
               tab={nav.tab}
-              onChange={next => { nav.setTab(next); nav.showListScreen(); }}
+              onChange={next => { handleTabChange(next); nav.showListScreen(); }}
               dueCount={dueCount}
             />
           </div>

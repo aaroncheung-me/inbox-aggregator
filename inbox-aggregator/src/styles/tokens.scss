@@ -14,6 +14,8 @@ $light-colors: (
   accent: #3B4A5A,
   accent-hover: #2C3944,
   accent-soft: #EDF1F4,
+  ai-tint: #E6ECF2, // the ask bar in AI mode
+  ai-edge: #C9D4DE,
   on-accent: #FFFFFF, // text on a filled accent button
   danger: #B3401F, // red text and borders
   danger-fill: #B3401F, // red backgrounds, under on-danger text
@@ -34,6 +36,8 @@ $dark-colors: (
   accent: #A7BACD,
   accent-hover: #C3D1DE,
   accent-soft: #22303D,
+  ai-tint: #1D2732,
+  ai-edge: #34475A,
   on-accent: #121416,
   danger: #F0876B,
   danger-fill: #B8432A,
@@ -60,6 +64,8 @@ $text-secondary: var(--text-secondary);
 $accent: var(--accent);
 $accent-hover: var(--accent-hover);
 $accent-soft: var(--accent-soft);
+$ai-tint: var(--ai-tint);
+$ai-edge: var(--ai-edge);
 $on-accent: var(--on-accent);
 $danger: var(--danger);
 $danger-fill: var(--danger-fill);

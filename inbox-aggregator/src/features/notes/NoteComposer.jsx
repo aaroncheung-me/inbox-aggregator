@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { formatReminder, noteTitle } from './notes';
 import { EmailLinkPicker, NoteLinkPicker, ReminderPicker } from './NoteAddonPickers';
+import PaneBar from '../../ui/PaneBar';
 import VoiceButton from '../../ui/VoiceButton';
 import { useVoiceRecorder } from '../../hooks/useVoiceRecorder';
 import { transcribeRecording } from '../../api';
@@ -17,8 +18,18 @@ const KIND_ORDER = ['reminder', 'pin', 'email_link', 'note_link'];
 // onSave(body, addons): saves as written. onAiSave(body, addons): lets the AI
 //   rewrite it and add more. Both resolve once saved; the composer then clears.
 //   With onAiSave there's also a Voice button: speak, and it's AI-saved at once.
-function NoteComposer({ notes, fixedAddons = [], onSave, onAiSave, onCancel, placeholder, className = '', autoFocus = false }) {
-  const [draft, setDraft] = useState('');
+// page: the phone's full-screen new note, { back, onDiscard }. Its saving
+//   buttons move up into the page's top bar. initialText / onTextChange keep
+//   what's written while the page is closed with back.
+function NoteComposer({
+  notes, fixedAddons = [], onSave, onAiSave, onCancel, placeholder, className = '', autoFocus = false,
+  page = null, initialText = '', onTextChange,
+}) {
+  const [draft, setDraftState] = useState(initialText);
+  function setDraft(text) {
+    setDraftState(text);
+    onTextChange?.(text);
+  }
   // add-ons picked but not saved yet: [{ addon, label }]
   const [pending, setPending] = useState([]);
   const [picker, setPicker] = useState(null); // 'reminder' | 'email' | 'note' | null
@@ -95,7 +106,25 @@ function NoteComposer({ notes, fixedAddons = [], onSave, onAiSave, onCancel, pla
     setMenuOpen(false);
   }
 
-  return (
+  const canSave = draft.trim() && !saving;
+  const aiSaveButton = onAiSave && (
+    <button
+      type="button"
+      className="btn btn-ghost btn-small"
+      onClick={() => handleSave('ai')}
+      disabled={!canSave}
+      title="Let the AI tidy the text and add a reminder, pin or links"
+    >
+      {saving === 'ai' ? 'AI saving...' : 'AI save'}
+    </button>
+  );
+  const saveButton = (
+    <button type="button" className="btn btn-small" onClick={() => handleSave('plain')} disabled={!canSave}>
+      {saving === 'plain' ? 'Saving...' : 'Save'}
+    </button>
+  );
+
+  const editor = (
     <div className={`note-composer ${className}`}>
       <textarea
         value={draft}
@@ -109,7 +138,7 @@ function NoteComposer({ notes, fixedAddons = [], onSave, onAiSave, onCancel, pla
         }}
         placeholder={placeholder}
         aria-label={placeholder}
-        rows={2}
+        rows={page ? 8 : 2}
         autoFocus={autoFocus}
       />
 
@@ -152,6 +181,8 @@ function NoteComposer({ notes, fixedAddons = [], onSave, onAiSave, onCancel, pla
 
       {(error || voice.error) && <p className="form-error">{error || voice.error}</p>}
 
+      {/* one row: what to add on the left, how to save on the right (on the
+          phone's page, saving is in the top bar) */}
       {!picker && (
         <div className="composer-actions">
           <div className="add-addon">
@@ -167,31 +198,31 @@ function NoteComposer({ notes, fixedAddons = [], onSave, onAiSave, onCancel, pla
               </div>
             )}
           </div>
-          <div className="composer-save">
-            {onCancel && (
-              <button type="button" className="btn btn-ghost btn-small" onClick={onCancel}>Cancel</button>
-            )}
-            {onAiSave && (
-              <VoiceButton recorder={voice} workingLabel="AI saving..." disabled={!!saving} />
-            )}
-            {onAiSave && (
-              <button
-                type="button"
-                className="btn btn-ghost btn-small"
-                onClick={() => handleSave('ai')}
-                disabled={!draft.trim() || saving}
-                title="Let the AI tidy the text and add a reminder, pin or links"
-              >
-                {saving === 'ai' ? 'AI saving...' : 'AI save'}
-              </button>
-            )}
-            <button type="button" className="btn btn-small" onClick={() => handleSave('plain')} disabled={!draft.trim() || saving}>
-              {saving === 'plain' ? 'Saving...' : 'Save'}
-            </button>
-          </div>
+          {onAiSave && <VoiceButton recorder={voice} workingLabel="AI saving..." disabled={!!saving} />}
+          {!page && (
+            <div className="composer-save">
+              {onCancel && (
+                <button type="button" className="btn btn-ghost btn-small" onClick={onCancel}>Cancel</button>
+              )}
+              {aiSaveButton}
+              {saveButton}
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+
+  if (!page) return editor;
+  return (
+    <>
+      <PaneBar left={page.back} title="New note">
+        {aiSaveButton}
+        {saveButton}
+        <button type="button" className="btn btn-ghost btn-small" onClick={page.onDiscard} disabled={!!saving}>Discard</button>
+      </PaneBar>
+      <div className="pane-body new-note-page">{editor}</div>
+    </>
   );
 }
 

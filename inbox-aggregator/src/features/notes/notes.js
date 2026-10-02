@@ -80,3 +80,12 @@ export function groupNotes(notes) {
     done: notes.filter(done),
   };
 }
+
+// Search on the Notes tab: the notes holding every word, in the list's order.
+export function searchNotes(notes, query) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return notes.filter(note => {
+    const body = (note.body || '').toLowerCase();
+    return words.every(word => body.includes(word));
+  });
+}

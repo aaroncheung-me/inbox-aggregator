@@ -59,3 +59,8 @@ export function timeLeft(isoString, now = Date.now()) {
   if (hours < 48) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
 }
+
+// '12 results for "invoice"', or '12+ ...' when there are more to load
+export function resultsText(count, query, more = false) {
+  return `${count}${more ? '+' : ''} result${count === 1 && !more ? '' : 's'} for "${query}"`;
+}

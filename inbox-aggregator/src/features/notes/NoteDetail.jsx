@@ -99,10 +99,7 @@ function NoteDetail({
 
   return (
     <>
-      <PaneBar
-        left={back}
-        title={<span className={`save-state ${saveState}`}>{SAVE_LABELS[saveState]}</span>}
-      >
+      <PaneBar left={back} title="Note">
         {confirmingDelete ? (
           <span className="confirm-delete">
             Delete this note?
@@ -111,6 +108,8 @@ function NoteDetail({
           </span>
         ) : (
           <>
+            {/* quiet, before the actions */}
+            <span className={`save-state ${saveState}`} role="status">{SAVE_LABELS[saveState]}</span>
             <ActionMenu
               label="+ Add"
               items={[

@@ -1,7 +1,10 @@
 import AskBar from '../features/assistant/AskBar';
+import { askPlaceholders } from '../features/assistant/askPlaceholders';
 import SyncStatus from '../features/email/SyncStatus';
 import FolderSwitch from '../features/email/FolderSwitch';
 import PaneBar from '../ui/PaneBar';
+import ResultsBar from '../ui/ResultsBar';
+import { resultsText } from '../format';
 import AccountsPanel from '../features/accounts/AccountsPanel';
 import PhoneAccountsBar from '../features/accounts/PhoneAccountsBar';
 import MessageList from '../features/email/MessageList';
@@ -13,6 +16,10 @@ import { PHONE_LAYOUT } from '../layout';
 
 function Sidebar({
   onAsk,
+  // the ask bar's AI | Search switch, and what empties its box (see AskBar)
+  askMode,
+  onAskModeChange,
+  askResetKey,
   asking,
   lastSyncedAt,
   onSync,
@@ -55,6 +62,11 @@ function Sidebar({
   onMoveNote,
   onSuggestOrganizing,
   onApplyOrganizing,
+  // a search on the Notes tab (null when none), and closing it
+  noteQuery = null,
+  onClearNoteQuery,
+  // phone: opens the full-screen new note
+  onStartNote,
   creditsBanner,
   focusAskBox = false,
   focusNoteBox = false,
@@ -68,7 +80,7 @@ function Sidebar({
   selectedScheduledId = null,
   onOpenScheduled,
   // while an email is being written: { title, onBackToDraft, onDiscard, chat }.
-  // The Inbox | Notes row becomes a Discard row, the list below becomes
+  // The Inbox | Notes row becomes "Writing: ...", the list below becomes
   // the email's assistant, and the ask box at the top asks that assistant.
   drafting = null,
 }) {
@@ -87,16 +99,11 @@ function Sidebar({
 
   const searchList = search && (
     <>
-      <div className="search-header">
-        <span>
-          {search.loading
-            ? 'Searching...'
-            : `${search.results.length}${search.hasMore ? '+' : ''} result${search.results.length === 1 ? '' : 's'} for "${search.query}"`}
-        </span>
-        <button className="btn btn-ghost btn-small" onClick={onClearSearch}>
-          {drafting ? 'Back to assistant' : 'Back to inbox'}
-        </button>
-      </div>
+      <ResultsBar
+        backLabel={drafting ? 'Assistant' : 'Inbox'}
+        onBack={onClearSearch}
+        text={search.loading ? 'Searching...' : resultsText(search.results.length, search.query, search.hasMore)}
+      />
       {search.error && <p className="search-empty">{search.error}</p>}
       {!search.loading && !search.error && search.results.length === 0 && (
         <p className="search-empty">No emails match.</p>
@@ -162,15 +169,17 @@ function Sidebar({
           <button className="btn btn-ghost btn-small" onClick={drafting.onDiscard}>Discard</button>
         </PaneBar>
       )}
+      {/* while writing, Discard is in the writing screen's own bar */}
       <AskBar
+        mode={askMode}
+        onModeChange={onAskModeChange}
         onAsk={onAsk}
         onSearch={onSearch}
         asking={asking}
         autoFocus={focusAskBox}
-        aiPlaceholder={drafting ? 'Ask, or say what to write...' : undefined}
-        topAction={!drafting
-          ? { label: 'New email', onClick: onNewEmail }
-          : isPhone ? undefined : { label: 'Discard', onClick: drafting.onDiscard, className: 'btn-ghost' }}
+        placeholders={askPlaceholders({ drafting, tab })}
+        resetKey={askResetKey}
+        topAction={drafting ? undefined : { label: 'New email', onClick: onNewEmail }}
       />
       {/* phone layout only: on desktop the chat is always beside the list */}
       {!drafting && chatCount > 0 && (
@@ -206,29 +215,35 @@ function Sidebar({
               onMove={onMoveNote}
               onSuggestOrganizing={onSuggestOrganizing}
               onApplyOrganizing={onApplyOrganizing}
-              autoFocusComposer={focusNoteBox}
+              autoFocusComposer={focusNoteBox && !isPhone}
+              query={noteQuery}
+              onClearQuery={onClearNoteQuery}
+              onStartNote={isPhone ? onStartNote : undefined}
             />
+          </>
+        ) : search ? (
+          // search results take the whole list's place, right under the bar
+          <>
+            {noticeBanner}
+            {searchList}
           </>
         ) : (
           <>
-            {/* search results take the list's place, with their own header */}
             <div className="list-header">
-              {!search && <FolderSwitch folder={folder} onChange={onFolderChange} />}
+              <FolderSwitch folder={folder} onChange={onFolderChange} />
               <SyncStatus lastSyncedAt={lastSyncedAt} onSync={onSync} syncing={syncing} />
             </div>
             {!isPhone && (
-              <>
-                <AccountsPanel
-                  accounts={accounts}
-                  onToggleAccount={onToggleAccount}
-                  onChangeColor={onChangeAccountColor}
-                  onAccountConnected={onAccountConnected}
-                  tempAddresses={tempAddresses}
-                />
-              </>
+              <AccountsPanel
+                accounts={accounts}
+                onToggleAccount={onToggleAccount}
+                onChangeColor={onChangeAccountColor}
+                onAccountConnected={onAccountConnected}
+                tempAddresses={tempAddresses}
+              />
             )}
             {noticeBanner}
-            {searchList || folderList}
+            {folderList}
           </>
         )}
       </div>

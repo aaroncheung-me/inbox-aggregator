@@ -12,20 +12,29 @@ const MODES = {
   },
   search: {
     label: 'Search',
-    placeholder: 'Words, from:name, after:2025-01-01, has:attachment',
+    placeholder: 'Search email: words, from:name, has:attachment',
     button: 'Search',
-    ariaLabel: 'Search your email',
+    ariaLabel: 'Search',
   },
 };
 
 // One box, two modes: ask the AI assistant, or a plain search (free, instant)
-// that lists matching emails in the sidebar. aiPlaceholder replaces the AI mode's
-// hint (while writing an email, the box asks that email's assistant).
-// topAction: { label, onClick, className? }, a button beside the mode switch (New email,
-// or Discard while writing one).
-function AskBar({ onAsk, onSearch, asking, autoFocus = false, aiPlaceholder, topAction }) {
-  const [mode, setMode] = useState('ai');
+// whose results replace the list below. AI mode tints the whole block, so it's
+// clear at a glance which one a press of the button does; the block stays the
+// same size either way.
+// mode / onModeChange: kept by the app, so the sidebar's bar and the phone's
+//   copy of it agree.
+// placeholders: { ai?, search? } replace the defaults (while writing, the box
+//   asks that email's assistant; on Notes, it searches notes).
+// resetKey: when it changes, the box empties (another tab, or a search closed).
+// topAction: { label, onClick }, a button beside the mode switch (New email).
+function AskBar({ mode, onModeChange, onAsk, onSearch, asking, autoFocus = false, placeholders = {}, resetKey, topAction }) {
   const [input, setInput] = useState('');
+  const [seenResetKey, setSeenResetKey] = useState(resetKey);
+  if (resetKey !== seenResetKey) {
+    setSeenResetKey(resetKey);
+    setInput('');
+  }
   const current = MODES[mode];
 
   // Voice acts at once: a spoken question is asked, a spoken search is run.
@@ -54,23 +63,23 @@ function AskBar({ onAsk, onSearch, asking, autoFocus = false, aiPlaceholder, top
   }
 
   return (
-    <div className="ask-bar">
+    <div className={`ask-bar ask-bar-${mode}`}>
       <div className="ask-bar-top">
-        <div className="mode-toggle" role="group" aria-label="Search mode">
+        <div className="mode-toggle" role="group" aria-label="Ask or search">
           {Object.entries(MODES).map(([key, m]) => (
             <button
               key={key}
               type="button"
               className={mode === key ? 'active' : ''}
               aria-pressed={mode === key}
-              onClick={() => setMode(key)}
+              onClick={() => onModeChange(key)}
             >
               {m.label}
             </button>
           ))}
         </div>
         {topAction && (
-          <button type="button" className={`btn btn-small ${topAction.className || ''}`} onClick={topAction.onClick}>
+          <button type="button" className="btn btn-small" onClick={topAction.onClick}>
             {topAction.label}
           </button>
         )}
@@ -80,7 +89,7 @@ function AskBar({ onAsk, onSearch, asking, autoFocus = false, aiPlaceholder, top
           type="text"
           value={input}
           onChange={e => setInput(e.target.value)}
-          placeholder={(mode === 'ai' && aiPlaceholder) || current.placeholder}
+          placeholder={placeholders[mode] || current.placeholder}
           aria-label={current.ariaLabel}
           autoFocus={autoFocus}
         />

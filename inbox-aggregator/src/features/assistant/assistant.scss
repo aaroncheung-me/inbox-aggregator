@@ -39,6 +39,20 @@
   }
 }
 
+// AI mode tints the whole block; Search stays plain
+.ask-bar-ai {
+  background: $ai-tint;
+  border-bottom-color: $ai-edge;
+
+  .mode-toggle {
+    background: $ai-edge;
+  }
+
+  .ask-bar-row input:not(:focus) {
+    border-color: $ai-edge;
+  }
+}
+
 // ---------- chat panel ----------
 .chat-panel {
   max-width: 680px;

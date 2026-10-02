@@ -142,7 +142,7 @@ function EmailDetail({ back, messageId, message, account, tempColors, loading, e
 
   return (
     <>
-      <PaneBar left={back}>
+      <PaneBar left={back} title="Email">
         {ready && (
           <>
             <button className="btn btn-small" onClick={() => onReply('reply')}>Reply</button>

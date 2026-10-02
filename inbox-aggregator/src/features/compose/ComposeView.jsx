@@ -12,8 +12,8 @@ function hasFiles(e) {
 // The writing screen, in the main pane. Plain text only for now.
 // draft: see newDraft in compose.js. onChange(changes) merges into it.
 // Top bar: on a phone, "Assistant" switches to the email's assistant (whose own
-// bar has "Back to email" in the same spot), and Discard sits far right, as on
-// that screen. On desktop Discard is at the top of the sidebar instead.
+// bar has "Back to email" in the same spot). Discard sits far right, as on
+// every page.
 // Only Send or Ctrl+Enter sends; Enter in a field doesn't.
 // Files are attached with Attach or by dropping them anywhere on the page
 // (onAddFiles), and listed as chips under the fields (onRemoveAttachment(key)).
@@ -93,7 +93,7 @@ function ComposeView({ draft, accounts, sending, onChange, onSend, onSchedule, o
           }}
         />
         <SendButton sending={sending} onSend={onSend} onSchedule={onSchedule} />
-        <button className="btn btn-ghost btn-small phone-only" onClick={onDiscard}>Discard</button>
+        <button className="btn btn-ghost btn-small" onClick={onDiscard}>Discard</button>
       </PaneBar>
       <div className={`pane-body${dragging ? ' compose-dropping' : ''}`} {...dropTarget}>
         <div className="compose" onKeyDown={handleKeyDown}>

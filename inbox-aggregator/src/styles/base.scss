@@ -232,3 +232,21 @@ button {
   width: calc(100% - #{$space-4 * 2});
   margin: $space-3 $space-4;
 }
+
+// the main pane with nothing in it
+.nothing-open {
+  max-width: 420px;
+  margin: 15vh auto 0;
+  text-align: center;
+  color: $text-secondary;
+
+  p {
+    margin: 0 0 $space-2;
+  }
+
+  .nothing-open-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+}

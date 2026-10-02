@@ -59,5 +59,12 @@ export function useChat({ refreshNotes, refreshStatus, onNoteDeleted }) {
     await refreshNotes();
   }
 
-  return { history, loading, pending, error, ask, undoCreatedNote };
+  // New chat: starts over, so the next question doesn't carry the earlier ones
+  function newChat() {
+    if (loading) return;
+    setHistory([]);
+    setError(null);
+  }
+
+  return { history, loading, pending, error, ask, undoCreatedNote, newChat };
 }
