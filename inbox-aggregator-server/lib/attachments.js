@@ -1,5 +1,5 @@
 const supabase = require('./supabase');
-const { getAccount, getCredentials } = require('./accounts');
+const { decryptCredentials } = require('./accounts');
 const { htmlToText } = require('./text');
 const { connectorFor } = require('../connectors');
 const { UserError } = require('./errors');
@@ -27,6 +27,29 @@ async function saveExtractedText(attachmentId, text) {
   if (error) throw error;
 }
 
+// The attachment with its email's id and account, or null if it doesn't
+// exist or isn't this user's.
+async function findAttachment(userId, attachmentId, columns) {
+  const { data, error } = await supabase
+    .from('attachments')
+    .select(`id, external_id, ${columns}, messages!inner(external_id, accounts!inner(id, user_id, provider, credentials))`)
+    .eq('id', attachmentId)
+    .eq('messages.accounts.user_id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+function download(attachment, maxBytes) {
+  const account = attachment.messages.accounts;
+  return connectorFor(account.provider).downloadAttachment({
+    credentials: decryptCredentials(account),
+    messageExternalId: attachment.messages.external_id,
+    attachmentExternalId: attachment.external_id,
+    maxBytes,
+  });
+}
+
 // Returns an attachment in the cheapest form Claude can read:
 //   { kind: 'text', text }             text pulled out here (free), saved so it's only done once
 //   { kind: 'pdf', data }              base64, for scanned PDFs with no text layer
@@ -34,17 +57,8 @@ async function saveExtractedText(attachmentId, text) {
 //   { kind: 'unreadable', reason }
 // Returns null if the attachment doesn't exist or isn't this user's.
 async function readAttachment(userId, attachmentId) {
-  const { data: attachment, error } = await supabase
-    .from('attachments')
-    .select('id, external_id, filename, mime_type, size_bytes, extracted_text, messages!inner(external_id, account_id)')
-    .eq('id', attachmentId)
-    .maybeSingle();
-
-  if (error) throw error;
+  const attachment = await findAttachment(userId, attachmentId, 'filename, mime_type, size_bytes, extracted_text');
   if (!attachment) return null;
-
-  const account = await getAccount(userId, attachment.messages.account_id);
-  if (!account) return null;
 
   const base = { filename: attachment.filename, mimeType: attachment.mime_type };
   if (attachment.extracted_text != null) return { ...base, kind: 'text', text: attachment.extracted_text };
@@ -60,12 +74,7 @@ async function readAttachment(userId, attachmentId) {
     return { ...base, kind: 'unreadable', reason: 'the file is too large to read' };
   }
 
-  const buffer = await connectorFor(account.provider).downloadAttachment({
-    credentials: await getCredentials(account),
-    messageExternalId: attachment.messages.external_id,
-    attachmentExternalId: attachment.external_id,
-    maxBytes: MAX_DOWNLOAD_BYTES,
-  });
+  const buffer = await download(attachment, MAX_DOWNLOAD_BYTES);
 
   if (isImage) {
     if (buffer.length > MAX_IMAGE_BYTES) return { ...base, kind: 'unreadable', reason: 'the image is too large to read' };
@@ -97,23 +106,11 @@ async function readAttachment(userId, attachmentId) {
 // The file itself, for saving from the app: { filename, mimeType, buffer }.
 // Returns null if the attachment doesn't exist or isn't this user's.
 async function downloadAttachmentFile(userId, attachmentId) {
-  const { data: attachment, error } = await supabase
-    .from('attachments')
-    .select('external_id, filename, mime_type, size_bytes, messages!inner(external_id, account_id)')
-    .eq('id', attachmentId)
-    .maybeSingle();
-  if (error) throw error;
-
-  const account = attachment && await getAccount(userId, attachment.messages.account_id);
-  if (!account) return null;
+  const attachment = await findAttachment(userId, attachmentId, 'filename, mime_type, size_bytes');
+  if (!attachment) return null;
   if (attachment.size_bytes > MAX_SAVE_BYTES) throw new UserError('This attachment is too large to download here');
 
-  const buffer = await connectorFor(account.provider).downloadAttachment({
-    credentials: await getCredentials(account),
-    messageExternalId: attachment.messages.external_id,
-    attachmentExternalId: attachment.external_id,
-    maxBytes: MAX_SAVE_BYTES,
-  });
+  const buffer = await download(attachment, MAX_SAVE_BYTES);
   return { filename: attachment.filename, mimeType: attachment.mime_type, buffer };
 }
 

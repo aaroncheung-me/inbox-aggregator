@@ -1,5 +1,6 @@
 const supabase = require('./supabase');
 const { generateEmbedding } = require('./embeddings');
+const { emailAddress } = require('./text');
 
 // Filters shared by every search. Dates are "YYYY-MM-DD" strings or null.
 // { sender, after, before, hasAttachments }
@@ -46,14 +47,9 @@ const MARKETING_LOCAL = /^(digital|news|newsletters?|marketing|promos?|promotion
 const MARKETING_SUBDOMAIN = /^(promo|promos|em|email|e|mail|mailer|news|newsletter|marketing|mkt|engage|offers)\./;
 const TRANSACTIONAL_LOCAL = /^(support|help|care|service|customerservice|customercare|orders?|receipts?|billing|invoices?|shipping|appointments?|returns?|warranty)$/;
 
-function senderAddress(sender) {
-  const match = /<([^>]+)>/.exec(sender || '');
-  return (match ? match[1] : sender || '').trim().toLowerCase();
-}
-
 // 'yours' | 'reply' | 'transactional' | 'marketing' | null
 function emailKind(message, ownAddresses = []) {
-  const address = senderAddress(message.sender);
+  const address = emailAddress(message.sender);
   const [local = '', domain = ''] = address.split('@');
   if (ownAddresses.includes(address)) return 'yours';
   if (TRANSACTIONAL_LOCAL.test(local)) return 'transactional';
@@ -125,15 +121,17 @@ async function hybridSearch(userId, accountIds, query, { filters, limit = 8, own
   }
 
   const ranked = [...merged.values()]
-    .map(entry => ({ ...entry, kind: emailKind(entry.message, ownAddresses) }))
-    .map(entry => ({ ...entry, score: entry.score * (KIND_WEIGHT[entry.kind] || 1) }))
+    .map(({ message, score }) => {
+      const kind = emailKind(message, ownAddresses);
+      return { message, kind, score: score * (KIND_WEIGHT[kind] || 1) };
+    })
     .sort((a, b) => b.score - a.score);
 
   const picked = [];
   const marketingPerSender = new Map();
   for (const entry of ranked) {
     if (entry.kind === 'marketing') {
-      const sender = senderAddress(entry.message.sender);
+      const sender = emailAddress(entry.message.sender);
       const count = marketingPerSender.get(sender) || 0;
       if (count >= MAX_MARKETING_PER_SENDER) continue;
       marketingPerSender.set(sender, count + 1);

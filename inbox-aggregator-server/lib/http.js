@@ -2,8 +2,6 @@ const { UserError } = require('./errors');
 const { describeProviderError } = require('./providerErrors');
 const { noteProviderFailure } = require('./providerStatus');
 
-// Helpers shared by the routes (routes/*.js).
-
 // Runs a route, answering 400 with { error } for problems the user can fix.
 function withUserErrors(handler) {
   return async (req, res) => {

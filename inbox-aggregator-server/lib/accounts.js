@@ -7,20 +7,29 @@ const ACCOUNT_COLUMNS =
 
 // Pastel colors handed out to new accounts in order, arranged so neighbors
 // look clearly different. Same list and order as the picker's swatches
-// (src/accountColors.js in the frontend).
+// (src/features/accounts/accountColors.js in the frontend).
 const ACCOUNT_COLORS = ['#93CDE6', '#F5BE8F', '#9FD8B0', '#CDA8EC', '#E9D17A', '#F2A7A7', '#A9B3EE', '#EFA7CC'];
 
-const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const MAX_SIGNATURE_CHARS = 2000;
 
-// The first palette color none of the user's accounts use yet, or the
+// The first palette color not in `used` (colors already taken), or the
 // least-used one once the palette runs out.
-async function pickAccountColor(userId) {
+function leastUsedColor(used) {
   const uses = new Map(ACCOUNT_COLORS.map(c => [c, 0]));
-  for (const account of await listAccounts(userId)) {
-    if (uses.has(account.color)) uses.set(account.color, uses.get(account.color) + 1);
+  for (const color of used) {
+    if (uses.has(color)) uses.set(color, uses.get(color) + 1);
   }
   return [...uses].reduce((least, entry) => (entry[1] < least[1] ? entry : least))[0];
+}
+
+// A color picked in the app, as stored ("#RRGGBB"), or null if it isn't one.
+function cleanColor(color) {
+  return typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color) ? color.toUpperCase() : null;
+}
+
+function decryptCredentials(account) {
+  if (!account.credentials) throw new Error(`Account ${account.id} has no stored credentials, reconnect it`);
+  return decryptJson(account.credentials);
 }
 
 // Connects an account, or refreshes the credentials of one already connected
@@ -45,7 +54,7 @@ async function saveConnectedAccount(userId, { provider, emailAddress, credential
 
   const { error: colorError } = await supabase
     .from('accounts')
-    .update({ color: await pickAccountColor(userId) })
+    .update({ color: leastUsedColor((await listAccounts(userId)).map(a => a.color)) })
     .eq('id', account.id);
   if (colorError) throw colorError;
 }
@@ -54,7 +63,8 @@ async function saveConnectedAccount(userId, { provider, emailAddress, credential
 async function updateAccountSettings(userId, accountId, { show_in_inbox, color, signature }) {
   const changes = {};
   if (typeof show_in_inbox === 'boolean') changes.show_in_inbox = show_in_inbox;
-  if (typeof color === 'string' && HEX_COLOR.test(color)) changes.color = color.toUpperCase();
+  const newColor = cleanColor(color);
+  if (newColor) changes.color = newColor;
   // plain text; an empty one is removed
   if (typeof signature === 'string') changes.signature = signature.trimEnd().slice(0, MAX_SIGNATURE_CHARS) || null;
   if (!Object.keys(changes).length) return getAccount(userId, accountId);
@@ -115,20 +125,18 @@ async function getMessageAccess(userId, messageId) {
 
   if (error) throw error;
   if (!data) return null;
-  if (!data.accounts.credentials) throw new Error(`Account ${data.accounts.id} has no stored credentials, reconnect it`);
-  return { externalId: data.external_id, provider: data.accounts.provider, credentials: decryptJson(data.accounts.credentials) };
+  return { externalId: data.external_id, provider: data.accounts.provider, credentials: decryptCredentials(data.accounts) };
 }
 
 async function getCredentials(account) {
   const { data, error } = await supabase
     .from('accounts')
-    .select('credentials')
+    .select('id, credentials')
     .eq('id', account.id)
     .single();
 
   if (error) throw error;
-  if (!data.credentials) throw new Error(`Account ${account.id} has no stored credentials, reconnect it`);
-  return decryptJson(data.credentials);
+  return decryptCredentials(data);
 }
 
 // Saves the connector's sync position and stamps last_synced_at. Returns that timestamp.
@@ -148,9 +156,11 @@ module.exports = {
   listAllAccounts,
   getAccount,
   getCredentials,
+  decryptCredentials,
   getMessageAccess,
   saveSyncState,
   saveConnectedAccount,
   updateAccountSettings,
-  ACCOUNT_COLORS,
+  leastUsedColor,
+  cleanColor,
 };

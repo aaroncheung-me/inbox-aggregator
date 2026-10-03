@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const supabase = require('./supabase');
-const { listAccounts, getCredentials, ACCOUNT_COLORS } = require('./accounts');
+const { listAccounts, getCredentials, leastUsedColor, cleanColor } = require('./accounts');
 const { cpanelConfigured, addForwarder, deleteForwarder } = require('./cpanel');
 const { UserError } = require('./errors');
 const { connectorFor } = require('../connectors');
@@ -25,17 +25,16 @@ function tempDomain() {
 
 // The connected IMAP mailbox on the temp domain, which the addresses forward to
 // (and which can delete their mail), or null.
-async function targetAccount(userId) {
+function targetAccount(accounts) {
   const domain = tempDomain();
   if (!domain) return null;
-  const accounts = await listAccounts(userId);
   return accounts.find(a => a.provider === 'imap' && a.email_address.toLowerCase().endsWith(`@${domain}`)) || null;
 }
 
 // Why temp addresses can't be used right now, or null if they can.
-async function unavailableReason(userId) {
+function unavailableReason(accounts) {
   if (!cpanelConfigured() || !tempDomain()) return 'The server needs cPanel API details and TEMP_MAIL_DOMAIN to make temp addresses.';
-  if (!await targetAccount(userId)) return `Connect a mailbox on ${tempDomain()} (Add account, Other) to use temp addresses.`;
+  if (!targetAccount(accounts)) return `Connect a mailbox on ${tempDomain()} (Add account, Other) to use temp addresses.`;
   return null;
 }
 
@@ -45,18 +44,6 @@ function randomLocalPart() {
   const chars = letters + '0123456789';
   const bytes = crypto.randomBytes(8);
   return [...bytes].map((b, i) => (i === 0 ? letters[b % letters.length] : chars[b % chars.length])).join('');
-}
-
-// The palette color used least by the user's accounts and temp addresses, so a
-// new address's emails look different from the rest.
-async function pickColor(userId, accounts) {
-  const { data, error } = await supabase.from('temp_addresses').select('color').eq('user_id', userId);
-  if (error) throw error;
-  const uses = new Map(ACCOUNT_COLORS.map(c => [c, 0]));
-  for (const { color } of [...accounts, ...data]) {
-    if (uses.has(color)) uses.set(color, uses.get(color) + 1);
-  }
-  return [...uses].reduce((least, entry) => (entry[1] < least[1] ? entry : least))[0];
 }
 
 function lifetimeMs(lifetime) {
@@ -76,7 +63,7 @@ function receivedQuery(accountId, address, columns, options) {
 
 // { available, reason, domain, addresses: [{ id, address, label, color, show_in_inbox, created_at, expires_at, received }] }
 async function listTempAddresses(userId) {
-  const reason = await unavailableReason(userId);
+  const reason = unavailableReason(await listAccounts(userId));
   const { data, error } = await supabase
     .from('temp_addresses')
     .select('id, account_id, address, label, color, show_in_inbox, created_at, expires_at')
@@ -97,19 +84,18 @@ async function listTempAddresses(userId) {
 // then remembers it; if remembering fails, the forwarder is removed again.
 async function createTempAddress(userId, { lifetime, label }) {
   const expiresAt = new Date(Date.now() + lifetimeMs(lifetime)).toISOString();
-  const reason = await unavailableReason(userId);
+  const accounts = await listAccounts(userId);
+  const reason = unavailableReason(accounts);
   if (reason) throw new UserError(reason);
-  const account = await targetAccount(userId);
+  const account = targetAccount(accounts);
 
-  const { count, error: countError } = await supabase
-    .from('temp_addresses')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId);
-  if (countError) throw countError;
-  if (count >= MAX_ACTIVE) throw new UserError(`You can have at most ${MAX_ACTIVE} temp addresses; delete some first`);
+  const { data: existing, error: existingError } = await supabase.from('temp_addresses').select('color').eq('user_id', userId);
+  if (existingError) throw existingError;
+  if (existing.length >= MAX_ACTIVE) throw new UserError(`You can have at most ${MAX_ACTIVE} temp addresses; delete some first`);
 
   const address = `${randomLocalPart()}@${tempDomain()}`;
-  const color = await pickColor(userId, await listAccounts(userId));
+  // the color used least so far, so its emails look different from the rest
+  const color = leastUsedColor([...accounts, ...existing].map(item => item.color));
   await addForwarder(address, account.email_address);
 
   const { data, error } = await supabase
@@ -131,14 +117,13 @@ async function createTempAddress(userId, { lifetime, label }) {
   return { ...data, received: 0 };
 }
 
-const HEX_COLOR = /^#[0-9a-f]{6}$/i;
-
 // Changes: { lifetime? (keeps it that long from now), color?, show_in_inbox? }.
 // Returns { expires_at, color, show_in_inbox }, or null if not found.
 async function updateTempAddress(userId, id, { lifetime, color, show_in_inbox: showInInbox }) {
   const changes = {};
   if (lifetime !== undefined) changes.expires_at = new Date(Date.now() + lifetimeMs(lifetime)).toISOString();
-  if (typeof color === 'string' && HEX_COLOR.test(color)) changes.color = color.toUpperCase();
+  const newColor = cleanColor(color);
+  if (newColor) changes.color = newColor;
   if (typeof showInInbox === 'boolean') changes.show_in_inbox = showInInbox;
   if (!Object.keys(changes).length) throw new UserError('Nothing to change');
 

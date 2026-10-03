@@ -6,8 +6,6 @@ const { withUserErrors } = require('../lib/http');
 
 const router = express.Router();
 
-// ---------- sending ----------
-
 // One file to attach to an email about to be sent, as the raw request body
 // (always sent as application/octet-stream, so no other parser touches it;
 // its real type is in X-Content-Type). Returns { uploadId } for POST /send.

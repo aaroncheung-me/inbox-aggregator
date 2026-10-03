@@ -48,13 +48,12 @@ async function embedPending(accountId) {
       batch.map(m => `${m.subject || ''}\n${m.body || m.snippet || ''}`)
     );
 
-    for (let i = 0; i < batch.length; i++) {
-      const { error: updateError } = await supabase
-        .from('messages')
-        .update({ embedding: embeddings[i] })
-        .eq('id', batch[i].id);
-      if (updateError) throw updateError;
-    }
+    const results = await Promise.all(batch.map((message, i) => supabase
+      .from('messages')
+      .update({ embedding: embeddings[i] })
+      .eq('id', message.id)));
+    const failed = results.find(result => result.error);
+    if (failed) throw failed.error;
 
     total += batch.length;
   }

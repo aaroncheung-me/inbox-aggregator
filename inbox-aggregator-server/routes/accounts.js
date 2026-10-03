@@ -2,7 +2,7 @@
 const express = require('express');
 const { listAccounts, getAccount, saveConnectedAccount, updateAccountSettings } = require('../lib/accounts');
 const { createConnectState } = require('../lib/auth');
-const { syncAccount, backfillAccount } = require('../lib/sync');
+const { syncAccounts, backfillAccount } = require('../lib/sync');
 const { withUserErrors } = require('../lib/http');
 const gmail = require('../connectors/gmail');
 const imap = require('../connectors/imap');
@@ -40,19 +40,8 @@ router.patch('/accounts/:accountId', async (req, res) => {
 
 // ---------- syncing ----------
 
-// Syncs every account. One account failing doesn't stop the others.
 router.post('/sync', async (req, res) => {
-  const accounts = await listAccounts(req.userId);
-  const results = [];
-
-  for (const account of accounts) {
-    try {
-      results.push(await syncAccount(account));
-    } catch (err) {
-      console.error(`Sync failed for account ${account.id} (${account.email_address}):`, err);
-      results.push({ accountId: account.id, emailAddress: account.email_address, error: err.message });
-    }
-  }
+  const results = await syncAccounts(await listAccounts(req.userId));
 
   res.json({
     saved: results.reduce((sum, r) => sum + (r.saved || 0), 0),

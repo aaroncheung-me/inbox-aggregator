@@ -1,5 +1,4 @@
 const OpenAI = require('openai');
-const { toFile } = require('openai');
 const { UserError } = require('./errors');
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -30,7 +29,7 @@ async function transcribe(audio, contentType) {
   const extension = EXTENSIONS[type];
   if (!extension) throw new UserError(`This recording format (${type || 'unknown'}) isn't supported`);
 
-  const file = await toFile(audio, `recording.${extension}`, { type });
+  const file = await OpenAI.toFile(audio, `recording.${extension}`, { type });
   const result = await openai.audio.transcriptions.create({ file, model: TRANSCRIBE_MODEL });
   return (result.text || '').trim();
 }

@@ -1,6 +1,7 @@
 const supabase = require('./supabase');
 const { getMessageAccess, listAccounts } = require('./accounts');
 const { connectorFor } = require('../connectors');
+const { emailAddress } = require('./text');
 
 // The conversation an opened email belongs to, shown in its place.
 // Conversations are per account: Gmail's thread id, or for IMAP the first
@@ -13,9 +14,7 @@ const COLUMNS = 'id, account_id, sender, to_recipients, subject, snippet, receiv
 // first time one of those is opened, Gmail says which emails share its
 // conversation, and the thread id is saved on every stored one of them.
 async function fillGmailThread(message, access) {
-  const connector = connectorFor(access.provider);
-  if (!connector.getThread) return null;
-  const { threadId, messageIds } = await connector.getThread({
+  const { threadId, messageIds } = await connectorFor(access.provider).getThread({
     credentials: access.credentials,
     messageExternalId: message.external_id,
   });
@@ -36,7 +35,7 @@ async function fillGmailThread(message, access) {
 async function getConversation(userId, messageId) {
   const { data: message, error } = await supabase
     .from('messages')
-    .select('id, account_id, external_id, thread_id, accounts!inner(user_id)')
+    .select('id, account_id, external_id, thread_id, accounts!inner(user_id, provider)')
     .eq('id', messageId)
     .eq('accounts.user_id', userId)
     .maybeSingle();
@@ -44,9 +43,8 @@ async function getConversation(userId, messageId) {
   if (!message) return null;
 
   let threadId = message.thread_id;
-  if (!threadId) {
-    const access = await getMessageAccess(userId, messageId);
-    threadId = await fillGmailThread(message, access);
+  if (!threadId && connectorFor(message.accounts.provider).getThread) {
+    threadId = await fillGmailThread(message, await getMessageAccess(userId, messageId));
   }
   if (!threadId) return [];
 
@@ -63,8 +61,7 @@ async function getConversation(userId, messageId) {
   // from_me: sent from any of the user's addresses. Read from the sender, since
   // older mail was synced without labels (so no SENT to go by).
   const own = (await listAccounts(userId)).map(a => a.email_address.toLowerCase());
-  const addressOf = sender => (/<([^>]+)>/.exec(sender || '')?.[1] || sender || '').trim().toLowerCase();
-  return data.map(m => ({ ...m, from_me: (m.labels || []).includes('SENT') || own.includes(addressOf(m.sender)) }));
+  return data.map(m => ({ ...m, from_me: (m.labels || []).includes('SENT') || own.includes(emailAddress(m.sender)) }));
 }
 
 module.exports = { getConversation };

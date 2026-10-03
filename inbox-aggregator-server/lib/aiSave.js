@@ -1,16 +1,12 @@
-const Anthropic = require('@anthropic-ai/sdk');
 const supabase = require('./supabase');
-const { SEARCH_EMAILS_TOOL, READ_EMAIL_TOOL, runTool, MODEL, PRICES } = require('./assistant');
-const { listNotes } = require('./notes');
+const { anthropic, MODEL, forceTool, newUsage, addUsage, usageReport } = require('./claude');
+const { SEARCH_EMAILS_TOOL, READ_EMAIL_TOOL, runTool } = require('./assistantTools');
+const { listNotes, firstLine } = require('./notes');
 const { validTimeZone, describeNow } = require('./time');
-const { NOTE_WRITING_RULES, NOTE_FIELDS, SEARCH_NOTES_TOOL, firstLine, runNoteSearch, saveAiNote } = require('./noteWriting');
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { NOTE_WRITING_RULES, NOTE_FIELDS, SEARCH_NOTES_TOOL, saveAiNote } = require('./noteWriting');
 
 // searches and emails opened, together; research notes need several of each
 const MAX_TOOL_CALLS = 8;
-// models that reject forcing a specific tool (the prompt steers them instead)
-const NO_FORCED_TOOL = new Set(['claude-opus-5-5', 'claude-fable-5-1', 'claude-mythos-5-1']);
 
 const SAVE_NOTE_TOOL = {
   name: 'save_note',
@@ -55,13 +51,9 @@ async function describeManualAddons(addons, notesById) {
   return lines.length ? `The user already attached these themselves:\n${lines.join('\n')}` : '';
 }
 
-function forceTool(name) {
-  return NO_FORCED_TOOL.has(MODEL) ? { type: 'auto' } : { type: 'tool', name };
-}
-
 // Runs the model until it calls save_note. Returns that call's input, or null
 // if it never did.
-async function decide({ text, manualDescription, timeZone, ctx, notes, seenNoteIds, usage }) {
+async function decide({ text, manualDescription, timeZone, ctx, usage }) {
   const messages = [{
     role: 'user',
     content: `The note:\n"""\n${text}\n"""${manualDescription ? `\n\n${manualDescription}` : ''}`,
@@ -78,8 +70,7 @@ async function decide({ text, manualDescription, timeZone, ctx, notes, seenNoteI
       tool_choice: outOfToolCalls ? forceTool('save_note') : { type: 'auto' },
       messages,
     });
-    usage.inputTokens += response.usage.input_tokens;
-    usage.outputTokens += response.usage.output_tokens;
+    addUsage(usage, response);
 
     const toolUses = response.content.filter(block => block.type === 'tool_use');
     const save = toolUses.find(block => block.name === 'save_note');
@@ -99,8 +90,6 @@ async function decide({ text, manualDescription, timeZone, ctx, notes, seenNoteI
       let content;
       if (toolCalls > MAX_TOOL_CALLS) {
         content = 'Tool limit reached.';
-      } else if (toolUse.name === 'search_notes') {
-        content = runNoteSearch(notes, toolUse.input.query, seenNoteIds);
       } else {
         try {
           content = (await runTool(toolUse.name, toolUse.input, ctx)).content;
@@ -123,17 +112,15 @@ async function aiSaveNote({ userId, accountIds, ownAddresses, text, manualAddons
   const zone = validTimeZone(timeZone);
   const notes = await listNotes(userId);
   const notesById = new Map(notes.map(note => [note.id, note]));
-  const ctx = { userId, accountIds, ownAddresses, seen: new Set() }; // seen: emails found by searches or opened
-  const seenNoteIds = new Set();
-  const usage = { inputTokens: 0, outputTokens: 0 };
+  // seen and seenNotes: what searches found or the model opened, the only things it may link
+  const ctx = { userId, accountIds, ownAddresses, notes, seen: new Set(), seenNotes: new Set() };
+  const usage = newUsage();
 
   const decision = await decide({
     text,
     manualDescription: await describeManualAddons(manualAddons, notesById),
     timeZone: zone,
     ctx,
-    notes,
-    seenNoteIds,
     usage,
   });
 
@@ -144,20 +131,11 @@ async function aiSaveNote({ userId, accountIds, ownAddresses, text, manualAddons
     manualAddons,
     timeZone: zone,
     seenEmailIds: ctx.seen,
-    seenNoteIds,
+    seenNoteIds: ctx.seenNotes,
   });
   if (decision?.message_to_user) messages.push(decision.message_to_user);
 
-  const [inputPrice, outputPrice] = PRICES[MODEL] || [];
-  return {
-    id,
-    message: messages.join(' ') || null,
-    usage: {
-      model: MODEL,
-      ...usage,
-      costUsd: inputPrice == null ? null : (usage.inputTokens * inputPrice + usage.outputTokens * outputPrice) / 1e6,
-    },
-  };
+  return { id, message: messages.join(' ') || null, usage: usageReport(usage) };
 }
 
 module.exports = { aiSaveNote };

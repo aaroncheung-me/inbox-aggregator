@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const addressparser = require('nodemailer/lib/addressparser');
 const supabase = require('./supabase');
-const { getAccount, getCredentials, listAccounts } = require('./accounts');
+const { getAccount, getCredentials } = require('./accounts');
 const { syncAccount } = require('./sync');
 const { UserError } = require('./errors');
 const { connectorFor } = require('../connectors');
@@ -46,13 +46,12 @@ function parseRecipients(text, field) {
 async function ownedMessage(userId, messageId) {
   const { data, error } = await supabase
     .from('messages')
-    .select('id, account_id, external_id, thread_id')
+    .select('id, account_id, external_id, thread_id, accounts!inner(user_id)')
     .eq('id', messageId)
+    .eq('accounts.user_id', userId)
     .maybeSingle();
   if (error) throw error;
-  if (!data) return null;
-  const accountIds = (await listAccounts(userId)).map(a => a.id);
-  return accountIds.includes(data.account_id) ? data : null;
+  return data;
 }
 
 // A file name that's safe in an email: no folders or control characters.
@@ -83,13 +82,13 @@ async function readAttachments(userId, input) {
 
   let forwarded = [];
   if (forwardedIds.length) {
-    const accountIds = (await listAccounts(userId)).map(a => a.id);
     const { data, error } = await supabase
       .from('attachments')
-      .select('id, size_bytes, messages!inner(account_id)')
-      .in('id', forwardedIds);
+      .select('id, size_bytes, messages!inner(accounts!inner(user_id))')
+      .in('id', forwardedIds)
+      .eq('messages.accounts.user_id', userId);
     if (error) throw error;
-    forwarded = data.filter(a => accountIds.includes(a.messages.account_id));
+    forwarded = data;
     if (forwarded.length !== forwardedIds.length) throw new UserError("One of the original's attachments couldn't be found");
   }
 

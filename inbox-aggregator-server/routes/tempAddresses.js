@@ -1,15 +1,12 @@
-// Temp addresses (see lib/tempAddresses.js).
+// Throwaway addresses on the user's own domain, removed with their emails when
+// they expire (see lib/tempAddresses.js).
 const express = require('express');
 const { listTempAddresses, createTempAddress, updateTempAddress, deleteTempAddress } = require('../lib/tempAddresses');
 const { withUserErrors } = require('../lib/http');
 
 const router = express.Router();
 
-// ---------- temp addresses ----------
-// Throwaway addresses on the user's own domain, removed with their emails when
-// they expire (see lib/tempAddresses.js).
-
-// { available, reason, domain, addresses: [{ id, address, label, created_at, expires_at, received }] }
+// { available, reason, domain, addresses: [...] }, shaped as listTempAddresses describes
 router.get('/temp-addresses', async (req, res) => {
   res.json(await listTempAddresses(req.userId));
 });

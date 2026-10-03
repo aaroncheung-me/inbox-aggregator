@@ -1,7 +1,7 @@
 // How the AI writes and saves notes. Shared by AI save (lib/aiSave.js) and the
 // assistant's "create a note" tool (lib/assistant.js), so both make the same
 // kind of note and go through the same checks.
-const { createNote, deleteNote, addAddon } = require('./notes');
+const { createNote, deleteNote, addAddon, firstLine } = require('./notes');
 const { localTimeToUtc } = require('./time');
 
 const NOTE_SEARCH_RESULTS = 8;
@@ -42,7 +42,7 @@ const NOTE_FIELDS = {
 
 const SEARCH_NOTES_TOOL = {
   name: 'search_notes',
-  description: "Search the user's existing notes by words. Returns up to 8 matches with their ids.",
+  description: `Search the user's existing notes by words. Returns up to ${NOTE_SEARCH_RESULTS} matches with their ids.`,
   input_schema: {
     type: 'object',
     properties: { query: { type: 'string', description: 'Words to look for.' } },
@@ -54,10 +54,6 @@ const SEARCH_NOTES_TOOL = {
 function parseId(value) {
   const digits = String(value ?? '').replace(/\D/g, '');
   return digits ? Number(digits) : NaN;
-}
-
-function firstLine(body) {
-  return (body || '').split('\n').find(line => line.trim())?.trim().slice(0, 100) || '(empty note)';
 }
 
 // Notes containing any of the query's words, most matching words first.
@@ -137,7 +133,6 @@ module.exports = {
   NOTE_FIELDS,
   SEARCH_NOTES_TOOL,
   parseId,
-  firstLine,
   searchNotes,
   formatNotes,
   runNoteSearch,

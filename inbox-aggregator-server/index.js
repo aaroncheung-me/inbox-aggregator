@@ -5,7 +5,7 @@ const cors = require('cors');
 
 const { getKey } = require('./lib/crypto');
 const { listAllAccounts, saveConnectedAccount } = require('./lib/accounts');
-const { syncAccount } = require('./lib/sync');
+const { syncAccounts } = require('./lib/sync');
 const { sendDue } = require('./lib/outbox');
 const { removeLeftoverUploads } = require('./lib/outboxFiles');
 const { expireTempAddresses } = require('./lib/tempAddresses');
@@ -52,21 +52,10 @@ function cronSecretMatches(given) {
 }
 
 async function runBackgroundSync() {
-  const accounts = await listAllAccounts();
-  let saved = 0;
-  let embedded = 0;
-  const failed = [];
-
-  for (const account of accounts) {
-    try {
-      const result = await syncAccount(account);
-      saved += result.saved;
-      embedded += result.embedded;
-    } catch (err) {
-      failed.push(account.email_address);
-      console.error(`Background sync failed for account ${account.id} (${account.email_address}):`, err.message);
-    }
-  }
+  const results = await syncAccounts(await listAllAccounts());
+  const saved = results.reduce((sum, r) => sum + (r.saved || 0), 0);
+  const embedded = results.reduce((sum, r) => sum + (r.embedded || 0), 0);
+  const failed = results.filter(r => r.error).map(r => r.emailAddress);
 
   // quiet runs aren't logged, so the log shows only runs where something happened
   if (saved || failed.length) {

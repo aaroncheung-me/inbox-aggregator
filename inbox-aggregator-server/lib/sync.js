@@ -4,6 +4,7 @@ const { embedPending } = require('./embeddings');
 const { connectorFor } = require('../connectors');
 
 const LOOKUP_CHUNK = 100; // ids per `in (...)` query, to keep request URLs short
+const UPDATES_AT_ONCE = 20;
 
 // Returns a function that filters a list of external ids down to the ones
 // this account hasn't stored yet.
@@ -52,19 +53,17 @@ async function saveMessages(accountId, messages) {
 }
 
 async function applyLabelUpdates(accountId, labelUpdates) {
-  for (const { externalId, labels } of labelUpdates) {
-    const { error } = await supabase
+  for (let i = 0; i < labelUpdates.length; i += UPDATES_AT_ONCE) {
+    const results = await Promise.all(labelUpdates.slice(i, i + UPDATES_AT_ONCE).map(({ externalId, labels }) => supabase
       .from('messages')
       .update({ labels, is_read: !labels.includes('UNREAD') })
       .eq('account_id', accountId)
-      .eq('external_id', externalId);
-    if (error) throw error;
+      .eq('external_id', externalId)));
+    const failed = results.find(result => result.error);
+    if (failed) throw failed.error;
   }
 }
 
-// Pulls everything new for one account, saves it, embeds it, and records
-// the new sync position. The position is saved last, so a failure partway
-// through just means the next sync redoes the same work.
 // accountId -> the sync already running for it
 const syncsInFlight = new Map();
 
@@ -79,6 +78,18 @@ function syncAccount(account) {
   return syncsInFlight.get(account.id);
 }
 
+// Syncs the accounts at the same time; one failing doesn't stop the others.
+// One result per account, { accountId, emailAddress, error } for a failure.
+function syncAccounts(accounts) {
+  return Promise.all(accounts.map(account => syncAccount(account).catch(err => {
+    console.error(`Sync failed for account ${account.id} (${account.email_address}):`, err);
+    return { accountId: account.id, emailAddress: account.email_address, error: err.message };
+  })));
+}
+
+// Pulls everything new for one account, saves it, embeds it, and records
+// the new sync position. The position is saved last, so a failure partway
+// through just means the next sync redoes the same work.
 async function runSync(account) {
   const connector = connectorFor(account.provider);
   const credentials = await getCredentials(account);
@@ -128,14 +139,13 @@ async function backfillAccount(account, { pageToken, maxPages }) {
   let oldestDate = null;
 
   for (let page = 0; page < maxPages; page++) {
-    const currentPageToken = pageToken; // the token that fetched THIS page — safe to retry with
-
     let result;
     try {
       result = await connector.fetchPage({ credentials, pageToken });
     } catch (err) {
       if (!connector.isRateLimitError(err)) throw err;
-      return { done: false, rateLimited: true, saved, embedded, oldestDate, nextPageToken: currentPageToken };
+      // the token of the page that failed, so calling again retries it
+      return { done: false, rateLimited: true, saved, embedded, oldestDate, nextPageToken: pageToken };
     }
 
     await saveMessages(account.id, result.messages);
@@ -153,4 +163,4 @@ async function backfillAccount(account, { pageToken, maxPages }) {
   return { done: false, saved, embedded, oldestDate, nextPageToken: pageToken };
 }
 
-module.exports = { syncAccount, backfillAccount };
+module.exports = { syncAccount, syncAccounts, backfillAccount };

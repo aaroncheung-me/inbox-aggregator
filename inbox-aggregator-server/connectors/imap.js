@@ -46,22 +46,25 @@ async function withClient(credentials, fn) {
 const KEPT_IDLE_MS = 45 * 1000;
 const keptClients = new Map(); // "user@host:port" -> { client, ready, active, timer }
 
+function keptClient(credentials, key) {
+  const existing = keptClients.get(key);
+  if (existing?.client.usable) return existing;
+
+  const client = createClient(credentials);
+  const entry = { client, ready: client.connect(), active: 0, timer: null };
+  entry.forget = () => { if (keptClients.get(key) === entry) keptClients.delete(key); };
+  keptClients.set(key, entry);
+  // a dropped connection is forgotten, and the next email opens a new one;
+  // the error listener also keeps a failure on an idle connection from crashing the server
+  client.on('error', err => console.error(`Kept IMAP connection to ${credentials.host} failed:`, err.message));
+  client.on('close', entry.forget);
+  entry.ready.catch(entry.forget);
+  return entry;
+}
+
 async function withKeptClient(credentials, fn, isRetry = false) {
   const key = `${credentials.user}@${credentials.host}:${credentials.port}`;
-  let kept = keptClients.get(key);
-  if (!kept || !kept.client.usable) {
-    const client = createClient(credentials);
-    kept = { client, ready: client.connect(), active: 0, timer: null };
-    keptClients.set(key, kept);
-    const entry = kept;
-    // a dropped connection is forgotten, and the next email opens a new one;
-    // the error listener also keeps a failure on an idle connection from crashing the server
-    client.on('error', err => console.error(`Kept IMAP connection to ${credentials.host} failed:`, err.message));
-    client.on('close', () => { if (keptClients.get(key) === entry) keptClients.delete(key); });
-    kept.ready.catch(() => { if (keptClients.get(key) === entry) keptClients.delete(key); });
-  }
-
-  const entry = kept;
+  const entry = keptClient(credentials, key);
   await entry.ready;
   entry.active++;
   clearTimeout(entry.timer);
@@ -70,7 +73,7 @@ async function withKeptClient(credentials, fn, isRetry = false) {
   } catch (err) {
     // the connection died while it sat unused: try once more on a new one
     if (!entry.client.usable && !isRetry) {
-      if (keptClients.get(key) === entry) keptClients.delete(key);
+      entry.forget();
       return withKeptClient(credentials, fn, true);
     }
     throw err;
@@ -78,7 +81,7 @@ async function withKeptClient(credentials, fn, isRetry = false) {
     entry.active--;
     if (entry.active === 0) {
       entry.timer = setTimeout(() => {
-        if (keptClients.get(key) === entry) keptClients.delete(key);
+        entry.forget();
         entry.client.logout().catch(() => entry.client.close());
       }, KEPT_IDLE_MS);
     }
@@ -307,14 +310,16 @@ async function withStoredMessage(credentials, messageExternalId, fn) {
   });
 }
 
-// Downloads one attachment's bytes (decoded).
+// One part's bytes, decoded (text parts come out as UTF-8).
+async function downloadPart(client, uid, part, maxBytes) {
+  const { content } = await client.download(uid, part, { uid: true, maxBytes });
+  const chunks = [];
+  for await (const chunk of content) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
 async function downloadAttachment({ credentials, messageExternalId, attachmentExternalId, maxBytes }) {
-  return withStoredMessage(credentials, messageExternalId, async (client, uid) => {
-    const { content } = await client.download(uid, attachmentExternalId, { uid: true, maxBytes });
-    const chunks = [];
-    for await (const chunk of content) chunks.push(chunk);
-    return Buffer.concat(chunks);
-  });
+  return withStoredMessage(credentials, messageExternalId, (client, uid) => downloadPart(client, uid, attachmentExternalId, maxBytes));
 }
 
 function findNodes(node, test, found = []) {
@@ -322,13 +327,6 @@ function findNodes(node, test, found = []) {
   if (!node.childNodes && test(node)) found.push(node);
   for (const child of node.childNodes || []) findNodes(child, test, found);
   return found;
-}
-
-async function downloadPart(client, uid, part, maxBytes) {
-  const { content } = await client.download(uid, part, { uid: true, maxBytes });
-  const chunks = [];
-  for await (const chunk of content) chunks.push(chunk);
-  return Buffer.concat(chunks);
 }
 
 // The email's HTML plus the images it shows from inside the email (cid: links),
@@ -346,7 +344,7 @@ async function getHtml({ credentials, messageExternalId, maxHtmlBytes, maxInline
       return { html: null, text, inlineParts: [] };
     }
 
-    // download() converts text to UTF-8; a single-part message's body is part 1
+    // a single-part message's body is part 1
     const html = (await downloadPart(client, uid, htmlNode.part || '1', maxHtmlBytes)).toString('utf-8');
 
     const wanted = referencedCids(html);

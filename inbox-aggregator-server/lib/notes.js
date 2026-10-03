@@ -1,17 +1,15 @@
 const supabase = require('./supabase');
-const { listAccounts } = require('./accounts');
 const { UserError } = require('./errors');
 
 const MAX_BODY_CHARS = 10000;
 const ADDON_KINDS = ['reminder', 'email_link', 'note_link', 'pin'];
 const ADDON_COLUMNS = 'id, note_id, kind, added_by, remind_at, done_at, linked_message_id, linked_note_id, created_at';
+// note_addons has two links to notes; add-ons belong to the note in note_id
+const OWNING_NOTE = 'notes!note_addons_note_id_fkey!inner(user_id)';
 
+// A note's title: its first non-empty line.
 function firstLine(body) {
   return (body || '').split('\n').find(line => line.trim())?.trim().slice(0, 120) || '(empty note)';
-}
-
-async function userAccountIds(userId) {
-  return (await listAccounts(userId)).map(a => a.id);
 }
 
 // ---------- reading ----------
@@ -24,20 +22,15 @@ async function userAccountIds(userId) {
 //     noteLinks:  [{ addonId, added_by, noteId, preview }] }
 // A link between two notes is stored once but listed on both of them.
 async function listNotes(userId) {
-  const { data: notes, error } = await supabase
-    .from('notes')
-    .select('id, body, position, created_at, updated_at')
-    .eq('user_id', userId)
-    .order('position');
-  if (error) throw error;
+  const [notesResult, addonsResult] = await Promise.all([
+    supabase.from('notes').select('id, body, position, created_at, updated_at').eq('user_id', userId).order('position'),
+    supabase.from('note_addons').select(`${ADDON_COLUMNS}, ${OWNING_NOTE}`).eq('notes.user_id', userId).order('created_at'),
+  ]);
+  if (notesResult.error) throw notesResult.error;
+  if (addonsResult.error) throw addonsResult.error;
+  const notes = notesResult.data;
+  const addons = addonsResult.data;
   if (!notes.length) return [];
-
-  const { data: addons, error: addonError } = await supabase
-    .from('note_addons')
-    .select(ADDON_COLUMNS)
-    .in('note_id', notes.map(n => n.id))
-    .order('created_at');
-  if (addonError) throw addonError;
 
   // details for the email chips; only emails in the user's own accounts
   const messageIds = [...new Set(addons.filter(a => a.kind === 'email_link').map(a => a.linked_message_id))];
@@ -45,16 +38,17 @@ async function listNotes(userId) {
   if (messageIds.length) {
     const { data: messages, error: messageError } = await supabase
       .from('messages')
-      .select('id, subject, sender, received_at, account_id')
+      .select('id, subject, sender, received_at, account_id, accounts!inner(user_id)')
       .in('id', messageIds)
-      .in('account_id', await userAccountIds(userId));
+      .eq('accounts.user_id', userId);
     if (messageError) throw messageError;
-    for (const m of messages) messagesById.set(m.id, m);
+    for (const { accounts, ...m } of messages) messagesById.set(m.id, m);
   }
 
   const shaped = new Map(notes.map(n => [n.id, { ...n, pin: null, reminder: null, emailLinks: [], noteLinks: [] }]));
   for (const a of addons) {
     const note = shaped.get(a.note_id);
+    if (!note) continue; // a note made between the two reads
     if (a.kind === 'pin') note.pin = { id: a.id, added_by: a.added_by };
     if (a.kind === 'reminder') note.reminder = { id: a.id, remind_at: a.remind_at, done_at: a.done_at, added_by: a.added_by };
     if (a.kind === 'email_link' && messagesById.has(a.linked_message_id)) {
@@ -99,7 +93,7 @@ async function notesForMessage(userId, messageId) {
 async function getOwnedNote(userId, noteId) {
   const { data, error } = await supabase
     .from('notes')
-    .select('id, body, position')
+    .select('id')
     .eq('id', noteId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -110,7 +104,7 @@ async function getOwnedNote(userId, noteId) {
 async function getOwnedAddon(userId, addonId) {
   const { data, error } = await supabase
     .from('note_addons')
-    .select(`${ADDON_COLUMNS}, notes!note_addons_note_id_fkey!inner(user_id)`)
+    .select(`${ADDON_COLUMNS}, ${OWNING_NOTE}`)
     .eq('id', addonId)
     .eq('notes.user_id', userId)
     .maybeSingle();
@@ -194,9 +188,9 @@ async function addAddon(userId, noteId, addon, addedBy = 'user') {
   } else if (addon.kind === 'email_link') {
     const { data: message, error } = await supabase
       .from('messages')
-      .select('id')
+      .select('id, accounts!inner(user_id)')
       .eq('id', addon.messageId)
-      .in('account_id', await userAccountIds(userId))
+      .eq('accounts.user_id', userId)
       .maybeSingle();
     if (error) throw error;
     if (!message) throw new UserError('That email was not found');
@@ -264,6 +258,7 @@ async function removeAddon(userId, addonId) {
 }
 
 module.exports = {
+  firstLine,
   listNotes,
   notesForMessage,
   createNote,

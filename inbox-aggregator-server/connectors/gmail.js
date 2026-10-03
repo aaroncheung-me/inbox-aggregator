@@ -66,31 +66,34 @@ async function handleCallback(code) {
 
 // ---------- parsing ----------
 
+function header(part, name) {
+  const wanted = name.toLowerCase();
+  return (part.headers || []).find(h => h.name.toLowerCase() === wanted)?.value ?? null;
+}
+
+// Every part of the message (itself included) that passes test, in order.
+function findParts(part, test, found = []) {
+  if (test(part)) found.push(part);
+  for (const child of part.parts || []) findParts(child, test, found);
+  return found;
+}
+
+function partText(part, bytes) {
+  return decodeText(bytes, /charset="?([^";\s]+)/i.exec(header(part, 'content-type') || '')?.[1]);
+}
+
+function inlineText(part) {
+  return partText(part, Buffer.from(part.body.data, 'base64url'));
+}
+
+// The plain text, or failing that the HTML converted to readable text.
 function extractBody(payload) {
-  function findPart(part, mimeType) {
-    if (part.mimeType === mimeType && part.body?.data) {
-      return part.body.data;
-    }
-    if (part.parts) {
-      for (const p of part.parts) {
-        const found = findPart(p, mimeType);
-        if (found) return found;
-      }
-    }
-    return null;
-  }
+  const [plain] = findParts(payload, p => p.mimeType === 'text/plain' && p.body?.data);
+  if (plain) return inlineText(plain);
 
-  const plainData = findPart(payload, 'text/plain') || (payload.mimeType === 'text/plain' ? payload.body?.data : null);
-  if (plainData) {
-    return Buffer.from(plainData, 'base64url').toString('utf-8');
-  }
-
-  // no plain-text part — fall back to HTML, converted to readable text
-  const htmlData = findPart(payload, 'text/html') || payload.body?.data;
-  if (!htmlData) return '';
-
-  const html = Buffer.from(htmlData, 'base64url').toString('utf-8');
-  return htmlToText(html);
+  const [html] = findParts(payload, p => p.mimeType === 'text/html' && p.body?.data);
+  const htmlPart = html || (payload.body?.data ? payload : null);
+  return htmlPart ? htmlToText(inlineText(htmlPart)) : '';
 }
 
 function collectAttachments(part, found = []) {
@@ -108,13 +111,10 @@ function collectAttachments(part, found = []) {
 
 // Turns a Gmail API message into the provider-neutral shape sync.js saves.
 function normalizeMessage(full) {
-  const headers = full.payload.headers || [];
-  const header = name => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
-
   // internalDate is Gmail's own received timestamp (epoch ms), always
   // present — more reliable than parsing the sender's Date header,
   // which is sometimes missing or malformed.
-  const dateHeader = header('Date');
+  const dateHeader = header(full.payload, 'Date');
   const receivedAt = full.internalDate
     ? new Date(parseInt(full.internalDate)).toISOString()
     : (dateHeader ? new Date(dateHeader).toISOString() : null);
@@ -125,10 +125,10 @@ function normalizeMessage(full) {
   return {
     external_id: full.id,
     thread_id: full.threadId,
-    sender: header('From'),
-    to_recipients: header('To'),
-    cc_recipients: header('Cc'),
-    subject: header('Subject'),
+    sender: header(full.payload, 'From'),
+    to_recipients: header(full.payload, 'To'),
+    cc_recipients: header(full.payload, 'Cc'),
+    subject: header(full.payload, 'Subject'),
     snippet: full.snippet,
     body: extractBody(full.payload).slice(0, MAX_BODY_CHARS),
     received_at: receivedAt,
@@ -291,40 +291,15 @@ async function fetchPage({ credentials, pageToken }) {
   };
 }
 
-function findPartById(part, partId) {
-  if (part.partId === partId) return part;
-  for (const child of part.parts || []) {
-    const found = findPartById(child, partId);
-    if (found) return found;
-  }
-  return null;
-}
-
 // Downloads one attachment's bytes. Stored ids are the stable partId, so the
 // current attachmentId (which Gmail changes between requests) is looked up first.
 async function downloadAttachment({ credentials, messageExternalId, attachmentExternalId }) {
   const gmail = gmailClient(credentials);
   const { data: full } = await gmail.users.messages.get({ userId: 'me', id: messageExternalId, format: 'full' });
 
-  const part = findPartById(full.payload, attachmentExternalId);
+  const [part] = findParts(full.payload, p => p.partId === attachmentExternalId);
   if (!part?.body?.attachmentId) throw new Error(`Attachment ${attachmentExternalId} not found in message ${messageExternalId}`);
-
-  const { data } = await gmail.users.messages.attachments.get({
-    userId: 'me',
-    messageId: messageExternalId,
-    id: part.body.attachmentId,
-  });
-  return Buffer.from(data.data, 'base64url');
-}
-
-function partHeader(part, name) {
-  return (part.headers || []).find(h => h.name.toLowerCase() === name)?.value ?? null;
-}
-
-function findParts(part, test, found = []) {
-  if (test(part)) found.push(part);
-  for (const child of part.parts || []) findParts(child, test, found);
-  return found;
+  return partBytes(gmail, messageExternalId, part);
 }
 
 // A part's decoded bytes: small ones come with the message, larger ones need their own request.
@@ -347,24 +322,22 @@ async function getHtml({ credentials, messageExternalId, maxHtmlBytes, maxInline
     // a plain-text email: all of its text (the app stores only the start)
     const [textPart] = findParts(full.payload, p => p.mimeType === 'text/plain' && !p.filename);
     if (!textPart || (textPart.body?.size ?? 0) > maxHtmlBytes) return { html: null, text: null, inlineParts: [] };
-    const textCharset = /charset="?([^";\s]+)/i.exec(partHeader(textPart, 'content-type') || '')?.[1];
-    return { html: null, text: decodeText(await partBytes(gmail, messageExternalId, textPart), textCharset), inlineParts: [] };
+    return { html: null, text: partText(textPart, await partBytes(gmail, messageExternalId, textPart)), inlineParts: [] };
   }
 
-  const charset = /charset="?([^";\s]+)/i.exec(partHeader(htmlPart, 'content-type') || '')?.[1];
-  const html = decodeText(await partBytes(gmail, messageExternalId, htmlPart), charset);
+  const html = partText(htmlPart, await partBytes(gmail, messageExternalId, htmlPart));
 
   const wanted = referencedCids(html);
   let budget = maxInlineBytes;
   const images = findParts(full.payload, p => {
-    const cid = partHeader(p, 'content-id');
+    const cid = header(p, 'content-id');
     if (!p.mimeType?.startsWith('image/') || !cid || !wanted.has(normalizeCid(cid))) return false;
     budget -= p.body?.size ?? 0;
     return budget >= 0;
   });
   const inlineParts = await Promise.all(images.map(async p => ({
     partId: p.partId,
-    cid: partHeader(p, 'content-id'),
+    cid: header(p, 'content-id'),
     mimeType: p.mimeType,
     content: await partBytes(gmail, messageExternalId, p),
   })));
@@ -393,13 +366,11 @@ async function getReplyHeaders({ credentials, messageExternalId }) {
     format: 'metadata',
     metadataHeaders: ['Message-ID', 'References', 'Reply-To'],
   });
-  const headers = data.payload?.headers || [];
-  const header = name => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
-
+  const payload = data.payload || {};
   return {
-    messageId: messageIds(header('Message-ID'))[0] || null,
-    references: messageIds(header('References')),
-    replyTo: header('Reply-To'),
+    messageId: messageIds(header(payload, 'Message-ID'))[0] || null,
+    references: messageIds(header(payload, 'References')),
+    replyTo: header(payload, 'Reply-To'),
   };
 }
 

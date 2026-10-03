@@ -1,14 +1,10 @@
-const Anthropic = require('@anthropic-ai/sdk');
-const { MODEL, PRICES } = require('./assistant');
-const { listNotes } = require('./notes');
+const { anthropic, MODEL, forceTool, newUsage, addUsage, usageReport } = require('./claude');
+const { listNotes, firstLine } = require('./notes');
 const { validTimeZone, describeNow } = require('./time');
-const { firstLine, parseId } = require('./noteWriting');
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const { parseId } = require('./noteWriting');
 
 const NOTE_EXCERPT_CHARS = 400;
 const MAX_NOTES = 150; // beyond this, only the newest are shown to the AI
-const NO_FORCED_TOOL = new Set(['claude-opus-5-5', 'claude-fable-5-1', 'claude-mythos-5-1']);
 const ACTIONS = ['pin', 'unpin', 'mark_done', 'link'];
 
 const SUGGEST_TOOL = {
@@ -138,31 +134,22 @@ async function suggestOrganizing({ userId, timeZone }) {
     ? [...allNotes].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, MAX_NOTES).sort((a, b) => a.position - b.position)
     : allNotes;
 
-  const usage = { inputTokens: 0, outputTokens: 0 };
+  const usage = newUsage();
   let decision = null;
-  if (notes.length >= 1) {
+  if (notes.length) {
     const response = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 2048,
       system: systemPrompt(zone),
       tools: [SUGGEST_TOOL],
-      tool_choice: NO_FORCED_TOOL.has(MODEL) ? { type: 'auto' } : { type: 'tool', name: 'suggest_changes' },
+      tool_choice: forceTool('suggest_changes'),
       messages: [{ role: 'user', content: `The notes, in their current order:\n\n${formatNotes(notes, zone)}` }],
     });
-    usage.inputTokens = response.usage.input_tokens;
-    usage.outputTokens = response.usage.output_tokens;
+    addUsage(usage, response);
     decision = response.content.find(block => block.type === 'tool_use' && block.name === 'suggest_changes')?.input || null;
   }
 
-  const [inputPrice, outputPrice] = PRICES[MODEL] || [];
-  return {
-    ...checkSuggestions(decision, notes),
-    usage: {
-      model: MODEL,
-      ...usage,
-      costUsd: inputPrice == null ? null : (usage.inputTokens * inputPrice + usage.outputTokens * outputPrice) / 1e6,
-    },
-  };
+  return { ...checkSuggestions(decision, notes), usage: usageReport(usage) };
 }
 
 module.exports = { suggestOrganizing };
