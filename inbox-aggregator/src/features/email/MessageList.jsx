@@ -1,5 +1,4 @@
-import { senderName, shortDate } from '../../format';
-import { recipientsLabel } from '../compose/compose';
+import { recipientsLabel, senderName, shortDate } from '../../format';
 import { preloadEmailHtml } from './useEmailHtml';
 import PaperclipIcon from '../../ui/PaperclipIcon';
 import { dragItemProps, middleClickProps } from '../../ui/dragItem';

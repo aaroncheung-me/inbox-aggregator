@@ -1,4 +1,4 @@
-import { recipientsLabel } from './compose';
+import { recipientsLabel } from '../../format';
 import { scheduleLabel } from './sendLater';
 
 // The Scheduled group at the top of Sent: who each goes to, its subject, and

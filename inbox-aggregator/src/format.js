@@ -1,4 +1,5 @@
-// Small display helpers shared by several components.
+// Helpers shared by several features: how dates, sizes, senders and address
+// lists read, and the times offered by reminders and Send later.
 
 // "84 KB", "3.1 MB"
 export function fileSize(bytes) {
@@ -26,6 +27,36 @@ export function senderName(sender) {
   if (!sender) return 'Unknown';
   const match = sender.match(/^"?([^"<]+)"?\s*</);
   return match ? match[1].trim() : sender;
+}
+
+// Splits "Ann <a@x.com>, "Doe, John" <j@y.com>" at the commas between
+// addresses, not the ones inside quotes or <...>.
+export function splitAddresses(text) {
+  const parts = [];
+  let current = '';
+  let inQuotes = false;
+  let inAngle = false;
+  for (const ch of text || '') {
+    if (ch === '"') inQuotes = !inQuotes;
+    else if (ch === '<' && !inQuotes) inAngle = true;
+    else if (ch === '>' && !inQuotes) inAngle = false;
+
+    if ((ch === ',' || ch === ';') && !inQuotes && !inAngle) {
+      if (current.trim()) parts.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+}
+
+// '"Ann" <a@x.com>, b@y.com' -> 'To: Ann +1', for lists of sent mail
+export function recipientsLabel(recipients) {
+  const list = splitAddresses(recipients);
+  if (!list.length) return 'To: (nobody)';
+  return `To: ${senderName(list[0])}${list.length > 1 ? ` +${list.length - 1}` : ''}`;
 }
 
 // "3:05 PM" for today, "Jun 3" for this year, "Jun 3, 2025" for older.

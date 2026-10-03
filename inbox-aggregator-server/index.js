@@ -117,7 +117,7 @@ app.use(require('./routes/assistant'));
 
 // Express 5 sends errors thrown in async routes here. It needs all four
 // arguments, unused `next` included, to be treated as an error handler.
-app.use((err, req, res, next) => {
+app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   // a request body over its route's limit (an attachment over 25 MB)
   if (err.type === 'entity.too.large') return res.status(413).json({ error: 'That file is too large, attachments can be 25 MB at most' });
   console.error(err);

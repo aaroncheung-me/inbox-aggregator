@@ -1,37 +1,7 @@
-import { senderName } from '../../format';
+import { splitAddresses } from '../../format';
 
 // Drafts for the writing screen (new, reply, forward, a scheduled email taken
 // back), their signatures and attachments, and address lists.
-
-// Splits "Ann <a@x.com>, "Doe, John" <j@y.com>" at the commas between
-// addresses, not the ones inside quotes or <...>.
-function splitAddresses(text) {
-  const parts = [];
-  let current = '';
-  let inQuotes = false;
-  let inAngle = false;
-  for (const ch of text || '') {
-    if (ch === '"') inQuotes = !inQuotes;
-    else if (ch === '<' && !inQuotes) inAngle = true;
-    else if (ch === '>' && !inQuotes) inAngle = false;
-
-    if ((ch === ',' || ch === ';') && !inQuotes && !inAngle) {
-      if (current.trim()) parts.push(current.trim());
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  if (current.trim()) parts.push(current.trim());
-  return parts;
-}
-
-// '"Ann" <a@x.com>, b@y.com' -> 'To: Ann +1', for lists of sent mail
-export function recipientsLabel(recipients) {
-  const list = splitAddresses(recipients);
-  if (!list.length) return 'To: (nobody)';
-  return `To: ${senderName(list[0])}${list.length > 1 ? ` +${list.length - 1}` : ''}`;
-}
 
 // 'Ann <A@x.com>' -> 'a@x.com'
 function addressOf(entry) {
