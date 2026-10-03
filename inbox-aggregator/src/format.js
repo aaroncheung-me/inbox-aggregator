@@ -22,7 +22,7 @@ export function timeAgo(isoString) {
   return `synced ${days}d ago`;
 }
 
-// '"IBM Talent" <talent@ibm.com>' -> 'IBM Talent'; a bare address stays as it is.
+// '"Acme Careers" <jobs@acme.com>' -> 'Acme Careers'; a bare address stays as it is.
 export function senderName(sender) {
   if (!sender) return 'Unknown';
   const match = sender.match(/^"?([^"<]+)"?\s*</);

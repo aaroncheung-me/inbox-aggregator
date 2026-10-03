@@ -1,6 +1,7 @@
 # secrets: keys live in .env files and in each host's settings, never in git
 .env
 .env.*
+!.env.example
 *.local
 
 # installed packages and build output

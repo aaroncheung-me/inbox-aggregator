@@ -80,7 +80,7 @@ const QUESTION_FILLER = new Set([
 ]);
 
 // The words of a question worth matching literally: no single letters (the
-// "M" and "D" of "M&D" appear everywhere) and no question filler.
+// "T" of "AT&T" appears everywhere) and no question filler.
 function questionKeywords(question) {
   return question
     .split(/[^\p{L}\p{N}]+/u)
