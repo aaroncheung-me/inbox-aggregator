@@ -145,17 +145,22 @@ function EmailDetail({ back, messageId, message, account, tempColors, loading, e
       <PaneBar left={back} title="Email">
         {ready && (
           <>
-            <button className="btn btn-small" onClick={() => onReply('reply')}>Reply</button>
-            <button className="btn btn-ghost btn-small desktop-only" onClick={() => onReply('replyAll')}>Reply all</button>
-            <button className="btn btn-ghost btn-small desktop-only" onClick={() => onReply('forward')}>Forward</button>
+            {/* no replying from beside the email being written: it would replace it */}
+            {onReply && (
+              <>
+                <button className="btn btn-small" onClick={() => onReply('reply')}>Reply</button>
+                <button className="btn btn-ghost btn-small desktop-only" onClick={() => onReply('replyAll')}>Reply all</button>
+                <button className="btn btn-ghost btn-small desktop-only" onClick={() => onReply('forward')}>Forward</button>
+              </>
+            )}
             <button className="btn btn-ghost btn-small desktop-only" onClick={() => setWritingNote(true)}>+ Note</button>
             <button className="btn btn-ghost btn-small desktop-only" onClick={onTogglePin}>{message.pinned_at ? 'Unpin' : 'Pin'}</button>
             <ActionMenu
               className="phone-only"
               label="More"
               items={[
-                { label: 'Reply all', onClick: () => onReply('replyAll') },
-                { label: 'Forward', onClick: () => onReply('forward') },
+                onReply && { label: 'Reply all', onClick: () => onReply('replyAll') },
+                onReply && { label: 'Forward', onClick: () => onReply('forward') },
                 { label: '+ Note', onClick: () => setWritingNote(true) },
                 { label: message.pinned_at ? 'Unpin' : 'Pin', onClick: onTogglePin },
               ]}

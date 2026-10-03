@@ -2,6 +2,7 @@ import { senderName, shortDate } from '../../format';
 import { splitAddresses } from '../compose/compose';
 import { preloadEmailHtml } from './useEmailHtml';
 import PaperclipIcon from '../../ui/PaperclipIcon';
+import { dragItemProps, middleClickProps } from '../../ui/dragItem';
 
 // How long the mouse rests on an email before its formatted version starts
 // loading, so sweeping across the list doesn't load every email passed over.
@@ -45,7 +46,11 @@ function MessageList({ messages, accountColors, tempColors, selectedId, onSelect
               ? tempColors?.get(m.temp_address.address) || m.temp_address.color
               : accountColors.get(m.account_id),
           }}
-          onClick={() => onSelect(m.id)}
+          // Ctrl/Cmd-click or a middle click: in a new tab, behind the one showing
+          onClick={e => onSelect(m.id, e.ctrlKey || e.metaKey ? { newTab: true, focus: false } : undefined)}
+          {...middleClickProps(() => onSelect(m.id, { newTab: true, focus: false }))}
+          // dragged onto the tab bar: in a new tab
+          {...dragItemProps({ kind: 'email', id: m.id, label: m.subject || '(no subject)', color: accountColors.get(m.account_id) })}
           {...preloadHandlers(m.id)}
         >
           <div className="message-list-item-top">

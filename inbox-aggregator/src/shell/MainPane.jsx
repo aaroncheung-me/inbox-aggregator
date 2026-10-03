@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import ChatPanel from '../features/assistant/ChatPanel';
 import ComposeView from '../features/compose/ComposeView';
 import EmailDetail from '../features/email/EmailDetail';
@@ -6,7 +7,8 @@ import SettingsPage from '../features/settings/SettingsPage';
 import ScheduledView from '../features/compose/ScheduledView';
 import NoteComposer from '../features/notes/NoteComposer';
 import PaneBar from '../ui/PaneBar';
-import { PaneClose, PaneInteraction } from '../ui/paneContext';
+import { PaneBeside, PaneClose } from '../ui/paneContext';
+import { droppedTab, isTabDrag } from '../ui/dragItem';
 import OpenTabs from './OpenTabs';
 
 // The open tabs (desktop), then the page of the one showing: the email being
@@ -14,8 +16,13 @@ import OpenTabs from './OpenTabs';
 // email, the assistant, or else "Nothing open". Each page starts with the same
 // top bar (PaneBar); on a phone without the header its left end leads back to
 // the list.
-// tabs: { tabs, activeKey, onShow, onClose, onCloseActive, onKeep }
-//   (see OpenTabs; onKeep keeps a temporary tab once its page is used).
+// While an email is being written (desktop), an email or note can show beside
+// it (`beside`); a reading page offers "Show beside", and a tab dragged onto
+// the writing screen's right half goes there too.
+// tabs: { tabs, activeKey, besideKey, onShow, onClose, onCloseActive, onNewTab,
+//   onDropItem, onShowBeside(key) or null, onCloseBeside } (see OpenTabs).
+// beside: { kind: 'email', messageId, message, account, loading, error,
+//   onTogglePin } or { kind: 'note', note }, or null.
 // noteActions: { onSaveBody, onDelete, onAddAddon, onUpdateAddon, onRemoveAddon, onOpenNote, onCreate, onAiCreate }
 // aiHeadsUp: { noteId, message } from the last AI save, shown on that note.
 // compose: the email being written, or null: { draft, visible, accounts, sending,
@@ -41,6 +48,7 @@ function MainPane({
   chatVisible = false,
   onNewChat,
   tabs,
+  beside = null,
   // phone: the full-screen new note, { text, onTextChange, onBack, onDiscard }, or null
   newNote = null,
   onOpenMessage,
@@ -59,16 +67,50 @@ function MainPane({
   // phone only: the ask box and Inbox | Notes, kept above every page but the writing screen
   phoneHeader = null,
 }) {
-  // a press on the page's scrollbar lands on the scrolling box itself: that's scrolling
-  const keepUnlessScrollbar = e => {
-    if (!e.target.classList?.contains('pane-body')) tabs.onKeep();
-  };
+  const [draggingTab, setDraggingTab] = useState(null);
+  const [overBeside, setOverBeside] = useState(false);
 
   // on a phone the header's tabs lead back to the lists instead
   const back = !phoneHeader && <button className="pane-back phone-only" onClick={onBackToList}>← {backLabel}</button>;
 
-  // pages closed with × (the writing screen and the new note have Discard)
+  const emailPage = (props, key) => (
+    <EmailDetail
+      key={key}
+      back={back}
+      tempColors={tempColors}
+      now={now}
+      allNotes={notes}
+      onOpenNote={noteActions.onOpenNote}
+      onOpenMessage={onOpenMessage}
+      onCreateNote={noteActions.onCreate}
+      onAiCreateNote={noteActions.onAiCreate}
+      {...props}
+    />
+  );
+
+  const notePage = note => (
+    <NoteDetail
+      key={note.id}
+      back={back}
+      note={note}
+      notes={notes}
+      now={now}
+      onSaveBody={noteActions.onSaveBody}
+      onDelete={noteActions.onDelete}
+      onAddAddon={noteActions.onAddAddon}
+      onUpdateAddon={noteActions.onUpdateAddon}
+      onRemoveAddon={noteActions.onRemoveAddon}
+      onOpenMessage={onOpenMessage}
+      onOpenNote={noteActions.onOpenNote}
+      headsUp={aiHeadsUp?.noteId === note.id ? aiHeadsUp.message : null}
+      onDismissHeadsUp={onDismissAiHeadsUp}
+    />
+  );
+
+  // pages closed with × on a phone (the writing screen and the new note have
+  // Discard); reading pages can go beside the email being written
   let closable = true;
+  let reading = false;
   let content;
   if (compose?.visible) {
     closable = false;
@@ -109,45 +151,19 @@ function MainPane({
   } else if (scheduled) {
     content = <ScheduledView key={scheduled.item.id} back={back} {...scheduled} />;
   } else if (selectedNote) {
-    content = (
-      <NoteDetail
-        key={selectedNote.id}
-        back={back}
-        note={selectedNote}
-        notes={notes}
-        now={now}
-        onSaveBody={noteActions.onSaveBody}
-        onDelete={noteActions.onDelete}
-        onAddAddon={noteActions.onAddAddon}
-        onUpdateAddon={noteActions.onUpdateAddon}
-        onRemoveAddon={noteActions.onRemoveAddon}
-        onOpenMessage={onOpenMessage}
-        onOpenNote={noteActions.onOpenNote}
-        headsUp={aiHeadsUp?.noteId === selectedNote.id ? aiHeadsUp.message : null}
-        onDismissHeadsUp={onDismissAiHeadsUp}
-      />
-    );
+    reading = true;
+    content = notePage(selectedNote);
   } else if (selectedMessageId != null) {
-    content = (
-      <EmailDetail
-        key={selectedMessageId}
-        back={back}
-        messageId={selectedMessageId}
-        message={selectedMessage}
-        account={selectedAccount}
-        tempColors={tempColors}
-        loading={messageLoading}
-        error={messageError}
-        now={now}
-        allNotes={notes}
-        onOpenNote={noteActions.onOpenNote}
-        onOpenMessage={onOpenMessage}
-        onCreateNote={noteActions.onCreate}
-        onAiCreateNote={noteActions.onAiCreate}
-        onReply={onReply}
-        onTogglePin={onTogglePin}
-      />
-    );
+    reading = true;
+    content = emailPage({
+      messageId: selectedMessageId,
+      message: selectedMessage,
+      account: selectedAccount,
+      loading: messageLoading,
+      error: messageError,
+      onReply,
+      onTogglePin,
+    }, selectedMessageId);
   } else if (chatVisible) {
     content = (
       <>
@@ -184,20 +200,66 @@ function MainPane({
     );
   }
 
+  const page = (
+    <PaneClose.Provider value={closable ? tabs.onCloseActive : null}>
+      <PaneBeside.Provider value={reading && tabs.onShowBeside ? () => tabs.onShowBeside(tabs.activeKey) : null}>
+        {content}
+      </PaneBeside.Provider>
+    </PaneClose.Provider>
+  );
+
+  // the writing screen, with what's beside it
+  const writing = compose?.visible;
+  let besidePage = null;
+  if (writing && beside?.kind === 'email') {
+    besidePage = emailPage({ ...beside, onReply: null }, `beside-${beside.messageId}`);
+  } else if (writing && beside?.kind === 'note') {
+    besidePage = notePage(beside.note);
+  }
+  const dropBeside = writing && draggingTab && draggingTab !== tabs.besideKey;
+
   return (
     <div className="main-pane">
-      <OpenTabs tabs={tabs.tabs} activeKey={tabs.activeKey} onShow={tabs.onShow} onClose={tabs.onClose} />
+      <OpenTabs
+        tabs={tabs.tabs}
+        activeKey={tabs.activeKey}
+        besideKey={writing ? tabs.besideKey : null}
+        onShow={tabs.onShow}
+        onClose={tabs.onClose}
+        onNewTab={tabs.onNewTab}
+        onDropItem={tabs.onDropItem}
+        onTabDrag={key => { setDraggingTab(key); setOverBeside(false); }}
+      />
       {/* the new note is a full screen of its own, like the writing screen */}
       {!newNote && phoneHeader}
-      <PaneClose.Provider value={closable ? tabs.onCloseActive : null}>
-        <PaneInteraction.Provider value={tabs.onKeep}>
-          {/* clicking or typing on the page keeps its tab; scrolling doesn't, it's
-              too easy to do by accident (display: contents, so no layout change) */}
-          <div className="main-pane-page" onPointerDown={keepUnlessScrollbar} onKeyDown={tabs.onKeep}>
-            {content}
+      {/* always this shape, so the page doesn't start over when something goes beside it */}
+      <div className="split">
+        <div className="split-pane">{page}</div>
+        {besidePage && (
+          <div className="split-pane split-side">
+            <PaneClose.Provider value={tabs.onCloseBeside}>{besidePage}</PaneClose.Provider>
           </div>
-        </PaneInteraction.Provider>
-      </PaneClose.Provider>
+        )}
+        {dropBeside && (
+          <div
+            className={`beside-drop${overBeside ? ' over' : ''}`}
+            onDragOver={e => {
+              if (!isTabDrag(e)) return;
+              e.preventDefault();
+              setOverBeside(true);
+            }}
+            onDragLeave={() => setOverBeside(false)}
+            onDrop={e => {
+              e.preventDefault();
+              const key = droppedTab(e);
+              setDraggingTab(null);
+              if (key) tabs.onPutBeside(key);
+            }}
+          >
+            Drop to show it beside the email you're writing
+          </div>
+        )}
+      </div>
     </div>
   );
 }

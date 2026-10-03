@@ -84,6 +84,8 @@ function App({ userEmail, onSignOut }) {
     refreshStatus: status.refresh,
   });
   const openEmail = useOpenEmail(nav.selectedMessageId, { reloadMessages: list.reload, onNotice: setNotice });
+  // the email beside the one being written, if that's what's beside it
+  const besideEmail = useOpenEmail(nav.beside?.kind === 'email' ? nav.beside.id : null, { reloadMessages: list.reload, onNotice: setNotice });
   const search = useSearch();
   const chat = useChat({
     refreshNotes: notes.refresh,
@@ -141,16 +143,35 @@ function App({ userEmail, onSignOut }) {
     });
   }
 
-  // Opens an email in a tab, named after its subject. hint: what the caller
+  // Opens an email, named after its subject on its tab. hint: what the caller
   // knows of it ({ subject, account_id }), else it's looked up in the lists.
-  function openEmailTab(id, hint) {
+  // opts: { newTab, at, focus } (see useNavigation).
+  function openEmailTab(id, hint, opts) {
     const known = hint
       || [...list.messages, ...list.pinned, ...(search.search?.results || [])].find(m => m.id === id)
       || (openEmail.message?.id === id ? openEmail.message : null);
     nav.openMessage(id, {
       label: known ? known.subject || '(no subject)' : 'Email',
       color: accounts.accounts.find(a => a.id === known?.account_id)?.color,
-    });
+    }, opts);
+  }
+
+  // an email or note dropped on the tab bar: a new tab there
+  function openDropped(item, at) {
+    if (item.kind === 'email') nav.openMessage(item.id, { label: item.label, color: item.color }, { newTab: true, at });
+    else if (item.kind === 'note') nav.openNote(item.id, { newTab: true, at });
+  }
+
+  // A reply or forward opens with the email it answers beside it (desktop).
+  function handleReply(kind) {
+    const emailTab = nav.active?.kind === 'email' ? nav.active.key : null;
+    if (compose.reply(kind) && emailTab && !window.matchMedia(PHONE_LAYOUT).matches) nav.showBeside(emailTab);
+  }
+
+  // an email or note tab, beside the email being written
+  function putBeside(key) {
+    const t = nav.tabs.find(other => other.key === key);
+    if (t && (t.kind === 'email' || t.kind === 'note')) nav.showBeside(key);
   }
 
   // what each tab is called (emails keep the name they opened with)
@@ -159,7 +180,7 @@ function App({ userEmail, onSignOut }) {
     if (t.kind === 'note') return noteTitle(notes.notes.find(n => n.id === t.id)?.body || '') || 'Note';
     if (t.kind === 'draft') return draft ? [DRAFT_TITLES[draft.mode], draft.subject].filter(Boolean).join(': ') : 'Email';
     if (t.kind === 'scheduled') return scheduled.scheduled.find(s => s.id === t.id)?.subject || 'Scheduled email';
-    return { chat: 'Assistant', settings: 'Settings', newnote: 'New note' }[t.kind];
+    return { chat: 'Assistant', settings: 'Settings', newnote: 'New note', empty: 'New tab' }[t.kind];
   }
 
   // × on a tab: the email being written and the new note are discarded (the
@@ -267,7 +288,7 @@ function App({ userEmail, onSignOut }) {
         tempColors={temp.colors}
         pinned={list.pinned}
         selectedId={nav.selectedMessageId}
-        onSelect={id => openEmailTab(id)}
+        onSelect={(id, opts) => openEmailTab(id, null, opts)}
         hasMore={list.messages.length < list.total}
         loadingMore={list.loadingMore}
         onLoadMore={list.loadMore}
@@ -297,7 +318,7 @@ function App({ userEmail, onSignOut }) {
         notes={notes.notes}
         now={now}
         selectedNoteId={nav.selectedNoteId}
-        onSelectNote={id => nav.openNote(id)}
+        onSelectNote={(id, opts) => nav.openNote(id, opts)}
         onCreateNote={handleCreateNote}
         onAiCreateNote={handleAiSaveNote}
         onMoveNote={notes.move}
@@ -329,7 +350,7 @@ function App({ userEmail, onSignOut }) {
               pending={compose.chatPending}
               error={compose.chatError}
               onUseDraft={compose.applyAiDraft}
-              onOpenMessage={openEmailTab}
+              onOpenMessage={(id, hint) => openEmailTab(id, hint)}
               onOpenNote={id => nav.openNote(id)}
               onUndoCreatedNote={compose.undoChatNote}
             />
@@ -359,7 +380,13 @@ function App({ userEmail, onSignOut }) {
             if (nav.active) nav.closeTab(nav.active.key);
             nav.showListScreen();
           },
-          onKeep: () => { if (nav.active) nav.keepTab(nav.active.key); },
+          besideKey: nav.besideKey,
+          onNewTab: nav.newTab,
+          onDropItem: openDropped,
+          // reading pages offer "Show beside" while an email is being written
+          onShowBeside: draft ? nav.showBeside : null,
+          onPutBeside: putBeside,
+          onCloseBeside: nav.closeBeside,
         }}
         newNote={nav.newNoteVisible && {
           text: newNoteText,
@@ -373,12 +400,24 @@ function App({ userEmail, onSignOut }) {
         noteActions={noteActions}
         aiHeadsUp={notes.aiHeadsUp}
         onDismissAiHeadsUp={notes.dismissAiHeadsUp}
-        onOpenMessage={openEmailTab}
+        onOpenMessage={(id, hint) => openEmailTab(id, hint)}
         onUndoCreatedNote={chat.undoCreatedNote}
+        beside={nav.beside?.kind === 'email' ? {
+          kind: 'email',
+          messageId: nav.beside.id,
+          message: besideEmail.message,
+          account: accounts.accounts.find(a => a.id === besideEmail.message?.account_id),
+          loading: besideEmail.loading,
+          error: besideEmail.error,
+          onTogglePin: besideEmail.togglePin,
+        } : nav.beside?.kind === 'note' && notes.notes.some(n => n.id === nav.beside.id) ? {
+          kind: 'note',
+          note: notes.notes.find(n => n.id === nav.beside.id),
+        } : null}
         onBackToList={nav.showListScreen}
         // while writing, the list screen is the email's assistant
         backLabel={drafting ? 'Assistant' : nav.tab === 'notes' ? 'Notes' : 'Inbox'}
-        onReply={compose.reply}
+        onReply={handleReply}
         // Phone: emails, notes and answers keep the list screen's top (the ask
         // box and Inbox | Notes), so moving between screens doesn't change the
         // layout; the tabs lead back to the lists. Not on the writing screen,

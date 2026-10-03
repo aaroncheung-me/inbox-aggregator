@@ -294,11 +294,6 @@ button {
     color: $text-primary;
     font-weight: 500;
   }
-
-  // not used yet: the next email or note opened replaces it
-  &.temporary .open-tab-label {
-    font-style: italic;
-  }
 }
 
 .open-tab-main {
@@ -361,15 +356,14 @@ button {
 }
 
 
-// MainPane's wrapper that notices the page being used; it adds no box
-.main-pane-page {
-  display: contents;
-}
-
-// phone: × at the end of a page's bar, back to the list
+// × at the end of a page's bar: on a phone (back to the list, see phone.scss)
+// and on the page beside the email being written
 .pane-close {
-  width: 36px;
-  height: 36px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
   border-radius: 6px;
@@ -377,4 +371,82 @@ button {
   font-size: 22px;
   line-height: 1;
   color: $text-secondary;
+}
+
+// the tab beside the email being written
+.open-tab.beside {
+  background: $surface;
+  box-shadow: inset 0 -2px 0 $accent;
+}
+
+.open-tabs-add {
+  flex-shrink: 0;
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 0 $space-1 $space-1;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  color: $text-secondary;
+
+  &:hover {
+    background: $surface;
+    color: $text-primary;
+  }
+}
+
+// an email or note being dragged over the tab bar
+.open-tabs.dropping {
+  box-shadow: inset 0 0 0 2px $accent;
+}
+
+// ---------- the page, and what's beside the email being written ----------
+.split {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.split-pane {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.split-side {
+  border-left: 1px solid $border;
+
+  .pane-close {
+    display: flex;
+  }
+}
+
+// while a tab is dragged: drop it on the right half to put it beside
+.beside-drop {
+  position: absolute;
+  top: $space-2;
+  right: $space-2;
+  bottom: $space-2;
+  width: calc(50% - #{$space-3});
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $space-6;
+  border: 2px dashed $accent;
+  border-radius: 8px;
+  background: $accent-soft;
+  color: $accent;
+  font-weight: 500;
+  text-align: center;
+
+  &.over {
+    background: $ai-tint;
+  }
 }

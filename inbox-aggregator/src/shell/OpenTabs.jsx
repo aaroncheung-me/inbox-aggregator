@@ -1,18 +1,53 @@
+import { useState } from 'react';
+import { droppedItem, isItemDrag, middleClickProps, startTabDrag } from '../ui/dragItem';
+
 // Desktop: the strip of open tabs along the top of the main pane, all the
-// same width. A temporary tab (not yet used) shows in italics. Closing a tab
-// is its ×, or a middle click.
-// tabs: [{ key, kind, label, color, kept }], kind 'email' (with its account
-// color), 'note', 'draft' or another page.
-function OpenTabs({ tabs, activeKey, onShow, onClose }) {
+// same width, then "+" for a new empty tab. Closing a tab is its ×, or a
+// middle click. Dropping an email or note from a list here opens it in a new
+// tab, where it's dropped (onDropItem(item, index)). Tabs can be dragged
+// (onTabDrag(key | null)), onto the writing screen's right half to show them
+// beside the email being written.
+// tabs: [{ key, kind, label, color }], kind 'email' (with its account
+// color), 'note', 'draft', 'empty' or another page. besideKey: the tab showing
+// beside the email being written.
+function OpenTabs({ tabs, activeKey, besideKey, onShow, onClose, onNewTab, onDropItem, onTabDrag }) {
+  const [dropping, setDropping] = useState(false);
+
+  function allowDrop(e) {
+    if (!isItemDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setDropping(true);
+  }
+
+  // dropped on a tab: after it; elsewhere on the strip: at the end
+  function drop(e, index = tabs.length) {
+    setDropping(false);
+    const item = droppedItem(e);
+    if (!item) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onDropItem(item, index);
+  }
+
   return (
-    <div className="open-tabs desktop-only">
+    <div
+      className={`open-tabs desktop-only${dropping ? ' dropping' : ''}`}
+      onDragOver={allowDrop}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDropping(false); }}
+      onDrop={e => drop(e)}
+    >
       <div className="open-tabs-list" role="tablist" aria-label="Open">
-        {tabs.map(t => (
+        {tabs.map((t, i) => (
           <div
             key={t.key}
-            className={`open-tab${t.key === activeKey ? ' active' : ''}${t.kept ? '' : ' temporary'}`}
+            className={`open-tab${t.key === activeKey ? ' active' : ''}${t.key === besideKey ? ' beside' : ''}`}
             title={t.label}
-            onAuxClick={e => { if (e.button === 1) onClose(t.key); }}
+            draggable={t.kind !== 'draft'}
+            onDragStart={e => { startTabDrag(e, t.key); onTabDrag(t.key); }}
+            onDragEnd={() => onTabDrag(null)}
+            onDrop={e => drop(e, i + 1)}
+            {...middleClickProps(() => onClose(t.key))}
           >
             <button
               className="open-tab-main"
@@ -28,6 +63,7 @@ function OpenTabs({ tabs, activeKey, onShow, onClose }) {
             <button className="open-tab-close" onClick={() => onClose(t.key)} aria-label={`Close ${t.label}`}>×</button>
           </div>
         ))}
+        <button className="open-tabs-add" onClick={onNewTab} aria-label="New tab" title="New tab">+</button>
       </div>
     </div>
   );

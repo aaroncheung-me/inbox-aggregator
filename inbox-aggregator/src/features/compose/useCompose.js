@@ -79,11 +79,13 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
   // kind: 'reply' | 'replyAll' | 'forward', on the email that's open. The draft
   // opens straight away; if the sender asked for replies to go elsewhere
   // (Reply-To), the To line is updated when that arrives, unless it was edited.
+  // Returns whether the draft opened.
   function reply(kind) {
     const message = openMessage;
-    if (!message) return;
+    if (!message) return false;
     const initial = draftFromMessage(kind, message, ownAddresses, null, signatureOf(message.account_id));
-    if (!open(initial) || kind === 'forward') return;
+    if (!open(initial)) return false;
+    if (kind === 'forward') return true;
 
     getReplyInfo(message.id).then(({ replyTo }) => {
       if (!replyTo) return;
@@ -92,6 +94,7 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
         ? { ...prev, to: better.to, cc: better.cc, showCcBcc: prev.showCcBcc || Boolean(better.cc) }
         : prev));
     });
+    return true;
   }
 
   // A different From address brings its own signature (see withAccount).

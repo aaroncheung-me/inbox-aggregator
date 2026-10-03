@@ -89,6 +89,18 @@
     display: none !important;
   }
 
+  .pane-close {
+    display: flex;
+    width: 36px;
+    height: 36px;
+  }
+
+  // no room to put things side by side
+  .split-side,
+  .beside-drop {
+    display: none;
+  }
+
   .phone-open-chat {
     width: 100%;
     min-height: 44px;

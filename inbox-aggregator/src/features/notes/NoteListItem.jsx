@@ -1,6 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { formatReminder, notePreview, noteTitle, reminderIsDue } from './notes';
+import { dragItemProps, middleClickProps } from '../../ui/dragItem';
 
 // One row in the notes list. In `sortable` groups, the grip on the left moves
 // the note; the rest of the row opens it and scrolls the list as usual, so on a
@@ -31,7 +32,15 @@ function NoteListItem({ note, now, selected, onSelect, sortable = true }) {
           <span className="drag-dots" aria-hidden="true" />
         </button>
       )}
-      <button type="button" className="note-list-main" onClick={() => onSelect(note.id)}>
+      <button
+        type="button"
+        className="note-list-main"
+        // as with emails: Ctrl/Cmd-click or a middle click opens a new tab, and so
+        // does dragging it onto the tab bar
+        onClick={e => onSelect(note.id, e.ctrlKey || e.metaKey ? { newTab: true, focus: false } : undefined)}
+        {...middleClickProps(() => onSelect(note.id, { newTab: true, focus: false }))}
+        {...dragItemProps({ kind: 'note', id: note.id })}
+      >
         <div className="note-title">{noteTitle(note.body)}</div>
         {preview && <div className="note-preview">{preview}</div>}
         {(note.reminder || note.emailLinks.length > 0 || note.noteLinks.length > 0) && (
