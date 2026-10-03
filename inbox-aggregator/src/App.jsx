@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { dueReminderCount, noteTitle } from './features/notes/notes';
 import { DRAFT_TITLES } from './features/compose/compose';
 import { useNow } from './hooks/useNow';
+import { useRemembered } from './hooks/useRemembered';
 import { useNavigation } from './shell/useNavigation';
 import { useProviderStatus } from './shell/useProviderStatus';
 import { useSync, oldestSyncTime } from './shell/useSync';
@@ -70,6 +71,10 @@ function App({ userEmail, onSignOut }) {
   const [askResets, setAskResets] = useState(0);
   const [noteQuery, setNoteQuery] = useState(null); // a search on the Notes tab
   const [newNoteText, setNewNoteText] = useState(''); // the phone's new note, kept while it's closed with back
+  // desktop, remembered on this device: which side things go beside the email
+  // being written, and whether the sidebar is folded away
+  const [besideSide, setBesideSide] = useRemembered('besideSide', 'right', ['left', 'right']);
+  const [sidebar, setSidebar] = useRemembered('sidebar', 'open', ['open', 'closed']);
   const list = useMessageList();
   const accounts = useAccounts({ onNotice: setNotice, reloadMessages: list.reload });
   const temp = useTempAddresses({ onNotice: setNotice, reloadMessages: list.reload });
@@ -168,10 +173,19 @@ function App({ userEmail, onSignOut }) {
     if (compose.reply(kind) && emailTab && !window.matchMedia(PHONE_LAYOUT).matches) nav.showBeside(emailTab);
   }
 
-  // an email or note tab, beside the email being written
-  function putBeside(key) {
-    const t = nav.tabs.find(other => other.key === key);
-    if (t && (t.kind === 'email' || t.kind === 'note')) nav.showBeside(key);
+  // An email or note dropped on one half of the writing screen: beside the
+  // draft, on that side. drop: { item } from a list, or { tabKey } from the tab bar.
+  function dropBeside({ item, tabKey }, side) {
+    if (item?.kind === 'email' || item?.kind === 'note') {
+      setBesideSide(side);
+      nav.openBeside(item.kind, item.id, item.kind === 'email' ? { label: item.label, color: item.color } : {});
+      return;
+    }
+    const t = nav.tabs.find(other => other.key === tabKey);
+    if (t && (t.kind === 'email' || t.kind === 'note')) {
+      setBesideSide(side);
+      nav.showBeside(tabKey);
+    }
   }
 
   // what each tab is called (emails keep the name they opened with)
@@ -262,8 +276,15 @@ function App({ userEmail, onSignOut }) {
   const dueCount = dueReminderCount(notes.notes, now);
 
   return (
-    <div className={`app phone-shows-${nav.phoneScreen}`}>
+    <div className={`app phone-shows-${nav.phoneScreen}${sidebar === 'closed' ? ' sidebar-closed' : ''}`}>
+      {/* desktop: the folded sidebar, a strip that brings it back */}
+      {sidebar === 'closed' && (
+        <div className="sidebar-rail desktop-only">
+          <button className="sidebar-toggle" onClick={() => setSidebar('open')} aria-label="Show the sidebar" title="Show the sidebar">»</button>
+        </div>
+      )}
       <Sidebar
+        onCollapse={() => setSidebar('closed')}
         creditsBanner={(
           <CreditsBanner
             problems={status.problems}
@@ -385,9 +406,11 @@ function App({ userEmail, onSignOut }) {
           onDropItem: openDropped,
           // reading pages offer "Show beside" while an email is being written
           onShowBeside: draft ? nav.showBeside : null,
-          onPutBeside: putBeside,
+          onDropBeside: dropBeside,
           onCloseBeside: nav.closeBeside,
+          onSwapBeside: () => setBesideSide(besideSide === 'left' ? 'right' : 'left'),
         }}
+        besideSide={besideSide}
         newNote={nav.newNoteVisible && {
           text: newNoteText,
           onTextChange: setNewNoteText,

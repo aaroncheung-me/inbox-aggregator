@@ -16,6 +16,8 @@ import { PHONE_LAYOUT } from '../layout';
 
 function Sidebar({
   onAsk,
+  // desktop: folds the sidebar away (« at its top left)
+  onCollapse,
   // the ask bar's AI | Search switch, and what empties its box (see AskBar)
   askMode,
   onAskModeChange,
@@ -181,6 +183,7 @@ function Sidebar({
         autoFocus={focusAskBox}
         placeholders={askPlaceholders({ drafting, tab })}
         resetKey={askResetKey}
+        onCollapse={isPhone ? undefined : onCollapse}
         // New email; while writing it becomes Discard in the same spot (on a
         // phone, Discard is in this screen's bar above)
         topAction={!drafting

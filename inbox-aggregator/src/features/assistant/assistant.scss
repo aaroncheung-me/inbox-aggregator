@@ -14,9 +14,14 @@
 // one height whichever button sits on the right (New email, or Discard)
 .ask-bar-top {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: $space-2;
   min-height: 30px;
+
+  // the button on the right (New email or Discard)
+  .mode-toggle {
+    margin-right: auto;
+  }
 }
 
 .ask-bar-row {

@@ -29,7 +29,8 @@ const MODES = {
 // resetKey: when it changes, the box empties (another tab, or a search closed).
 // topAction: { label, onClick, className? }, a button beside the mode switch
 // (New email, or Discard while writing one).
-function AskBar({ mode, onModeChange, onAsk, onSearch, asking, autoFocus = false, placeholders = {}, resetKey, topAction }) {
+// onCollapse: the sidebar's « (desktop), before the mode switch.
+function AskBar({ mode, onModeChange, onAsk, onSearch, asking, autoFocus = false, placeholders = {}, resetKey, topAction, onCollapse }) {
   const [input, setInput] = useState('');
   const [seenResetKey, setSeenResetKey] = useState(resetKey);
   if (resetKey !== seenResetKey) {
@@ -66,6 +67,9 @@ function AskBar({ mode, onModeChange, onAsk, onSearch, asking, autoFocus = false
   return (
     <div className={`ask-bar ask-bar-${mode}`}>
       <div className="ask-bar-top">
+        {onCollapse && (
+          <button type="button" className="sidebar-toggle" onClick={onCollapse} aria-label="Hide the sidebar" title="Hide the sidebar">«</button>
+        )}
         <div className="mode-toggle" role="group" aria-label="Ask or search">
           {Object.entries(MODES).map(([key, m]) => (
             <button

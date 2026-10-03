@@ -428,13 +428,28 @@ button {
   }
 }
 
-// while a tab is dragged: drop it on the right half to put it beside
-.beside-drop {
+// beside on the left: the side page comes first
+.split.beside-left .split-side {
+  order: -1;
+  border-left: none;
+  border-right: 1px solid $border;
+}
+
+.pane-swap {
+  font-size: 16px;
+}
+
+// while something is dragged: where it can be dropped (MainPane)
+.drop-zones {
   position: absolute;
-  top: $space-2;
-  right: $space-2;
-  bottom: $space-2;
-  width: calc(50% - #{$space-3});
+  inset: $space-2;
+  z-index: 5;
+  display: flex;
+  gap: $space-2;
+}
+
+.drop-zone {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -448,5 +463,42 @@ button {
 
   &.over {
     background: $ai-tint;
+  }
+}
+
+// ---------- folding the sidebar away (desktop) ----------
+.sidebar-toggle {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font-size: 16px;
+  line-height: 1;
+  color: $text-secondary;
+
+  &:hover {
+    background: $accent-soft;
+    color: $text-primary;
+  }
+}
+
+// what's left of the folded sidebar: a strip with » to bring it back
+.sidebar-rail {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 44px;
+  padding-top: $space-3;
+  border-right: 1px solid $border;
+  background: $surface;
+}
+
+@media (min-width: 768px) {
+  .app.sidebar-closed .sidebar {
+    display: none;
   }
 }

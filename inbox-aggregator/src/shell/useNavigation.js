@@ -179,6 +179,14 @@ export function useNavigation(initialTab, { startOnNewNote = false } = {}) {
     },
     // a reading tab beside the email being written, which shows
     showBeside: key => setOpened(prev => ({ ...prev, activeKey: 'draft', besideKey: key })),
+    // an email or note (dropped there) beside the email being written, in its
+    // own tab (or the one it's already open in)
+    openBeside: (kind, id, info = {}) => setOpened(prev => {
+      const open = prev.tabs.find(t => t.kind === kind && t.id === id);
+      if (open) return { ...prev, activeKey: 'draft', besideKey: open.key };
+      const added = { key: newKey(), kind, id, ...info };
+      return { tabs: insert(prev.tabs, added, 'draft'), activeKey: 'draft', besideKey: added.key };
+    }),
     closeBeside: () => setOpened(prev => ({ ...prev, besideKey: null })),
     hideDraft: () => close('draft'),
     closeNote: id => closeShowing('note', id),

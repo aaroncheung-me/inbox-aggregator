@@ -4,13 +4,12 @@ import { droppedItem, isItemDrag, middleClickProps, startTabDrag } from '../ui/d
 // Desktop: the strip of open tabs along the top of the main pane, all the
 // same width, then "+" for a new empty tab. Closing a tab is its ×, or a
 // middle click. Dropping an email or note from a list here opens it in a new
-// tab, where it's dropped (onDropItem(item, index)). Tabs can be dragged
-// (onTabDrag(key | null)), onto the writing screen's right half to show them
-// beside the email being written.
+// tab, where it's dropped (onDropItem(item, index)). Tabs can be dragged onto
+// the writing screen, to show them beside the email being written (MainPane).
 // tabs: [{ key, kind, label, color }], kind 'email' (with its account
 // color), 'note', 'draft', 'empty' or another page. besideKey: the tab showing
 // beside the email being written.
-function OpenTabs({ tabs, activeKey, besideKey, onShow, onClose, onNewTab, onDropItem, onTabDrag }) {
+function OpenTabs({ tabs, activeKey, besideKey, onShow, onClose, onNewTab, onDropItem }) {
   const [dropping, setDropping] = useState(false);
 
   function allowDrop(e) {
@@ -44,8 +43,7 @@ function OpenTabs({ tabs, activeKey, besideKey, onShow, onClose, onNewTab, onDro
             className={`open-tab${t.key === activeKey ? ' active' : ''}${t.key === besideKey ? ' beside' : ''}`}
             title={t.label}
             draggable={t.kind !== 'draft'}
-            onDragStart={e => { startTabDrag(e, t.key); onTabDrag(t.key); }}
-            onDragEnd={() => onTabDrag(null)}
+            onDragStart={e => startTabDrag(e, t.key)}
             onDrop={e => drop(e, i + 1)}
             {...middleClickProps(() => onClose(t.key))}
           >
