@@ -1,5 +1,5 @@
 import { senderName, shortDate } from '../../format';
-import { splitAddresses } from '../compose/compose';
+import { recipientsLabel } from '../compose/compose';
 import { preloadEmailHtml } from './useEmailHtml';
 import PaperclipIcon from '../../ui/PaperclipIcon';
 import { dragItemProps, middleClickProps } from '../../ui/dragItem';
@@ -21,13 +21,6 @@ function preloadHandlers(messageId) {
     onPointerLeave: () => clearTimeout(hoverTimer),
     onPointerDown: () => preloadEmailHtml(messageId),
   };
-}
-
-// '"Ann" <a@x.com>, b@y.com' -> 'To: Ann +1'
-function recipientsLabel(recipients) {
-  const list = splitAddresses(recipients);
-  if (!list.length) return 'To: (nobody)';
-  return `To: ${senderName(list[0])}${list.length > 1 ? ` +${list.length - 1}` : ''}`;
 }
 
 // showRecipients: for sent mail, the people it went to instead of the sender.

@@ -94,7 +94,7 @@ function DraftSuggestion({ draft, used, onUse }) {
 // emptyContent replaces the usual examples when there's nothing yet (the
 // assistant beside the writing screen has its own). onUseDraft(exchangeIndex)
 // is given there too, for drafts the assistant wrote.
-// pending: the answer in progress, { question, steps, text } (see applyProgress in App.jsx).
+// pending: the answer in progress, { question, steps, text } (see applyProgress in useChat.js).
 function ChatPanel({
   history, loading, pending = null, error, onOpenMessage, onOpenNote, onUndoCreatedNote,
   emptyContent = null, onUseDraft = null, workingLabel = 'Searching your email and notes...',

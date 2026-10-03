@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useDismiss } from '../../hooks/useDismiss';
-import { sendLaterOptions, scheduleLabel, toLocalInputValue } from './sendLater';
+import { nextFullHour, toDateTimeInput } from '../../format';
+import { sendLaterOptions, scheduleLabel } from './sendLater';
 
 // Send, with a ▾ beside it for Send later: preset times, or any date and time.
 // onSend() sends now; onSchedule(date) sends at that time.
@@ -9,7 +10,7 @@ function SendButton({ sending, onSend, onSchedule }) {
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState('');
   const ref = useRef(null);
-  useDismiss(ref, open, isOpen => { if (!isOpen) close(); });
+  useDismiss(ref, open, close);
 
   function close() {
     setOpen(false);
@@ -18,10 +19,7 @@ function SendButton({ sending, onSend, onSchedule }) {
 
   function toggle() {
     if (open) return close();
-    // the picker starts an hour from now, on the hour
-    const start = new Date();
-    start.setHours(start.getHours() + 1, 0, 0, 0);
-    setPicked(toLocalInputValue(start));
+    setPicked(toDateTimeInput(nextFullHour()));
     setOpen(true);
   }
 
@@ -65,7 +63,7 @@ function SendButton({ sending, onSend, onSchedule }) {
                 type="datetime-local"
                 aria-label="Date and time to send"
                 value={picked}
-                min={toLocalInputValue(now)}
+                min={toDateTimeInput(now)}
                 onChange={e => setPicked(e.target.value)}
               />
               <button type="button" className="btn btn-small" disabled={!pickedOk} onClick={() => schedule(pickedDate)}>

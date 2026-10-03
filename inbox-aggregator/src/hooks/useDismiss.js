@@ -1,16 +1,19 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
-// While `open`, closes a popup (via setOpen(false)) on a pointerdown outside
-// `ref` or on Escape. For menus and popovers.
-export function useDismiss(ref, open, setOpen) {
+// While `open`, calls onClose on a pointerdown outside `ref` or on Escape. For
+// menus and popovers. onClose can be a new function every render.
+export function useDismiss(ref, open, onClose) {
+  const close = useRef(onClose);
+  useEffect(() => { close.current = onClose; });
+
   useEffect(() => {
     if (!open) return;
 
     function handlePointerDown(e) {
-      if (!ref.current?.contains(e.target)) setOpen(false);
+      if (!ref.current?.contains(e.target)) close.current();
     }
     function handleKeyDown(e) {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') close.current();
     }
 
     document.addEventListener('pointerdown', handlePointerDown);
@@ -19,5 +22,5 @@ export function useDismiss(ref, open, setOpen) {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [ref, open, setOpen]);
+  }, [ref, open]);
 }

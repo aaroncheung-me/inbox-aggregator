@@ -1,3 +1,5 @@
+import { atHour, daysUntilMonday } from '../../format';
+
 // Helpers for notes shared by several components.
 
 // The first non-empty line stands in for a title.
@@ -37,30 +39,17 @@ export function formatReminder(isoString) {
 
 // Quick picks offered when adding a reminder, as [label, Date].
 export function reminderQuickPicks(now = new Date()) {
-  const at = (daysAhead, hour) => {
-    const d = new Date(now);
-    d.setDate(d.getDate() + daysAhead);
-    d.setHours(hour, 0, 0, 0);
-    return d;
-  };
   const inAnHour = new Date(now.getTime() + 60 * 60 * 1000);
   inAnHour.setSeconds(0, 0);
-  const daysToMonday = ((8 - now.getDay()) % 7) || 7;
 
   const picks = [
     ['In 1 hour', inAnHour],
-    ...(now.getHours() < 17 ? [['This evening, 6 PM', at(0, 18)]] : []),
-    ['Tomorrow, 9 AM', at(1, 9)],
-    ['Next Monday, 9 AM', at(daysToMonday, 9)],
+    ...(now.getHours() < 17 ? [['This evening, 6 PM', atHour(now, 0, 18)]] : []),
+    ['Tomorrow, 9 AM', atHour(now, 1, 9)],
+    ['Next Monday, 9 AM', atHour(now, daysUntilMonday(now), 9)],
   ];
   // on a Sunday, "next Monday" is tomorrow: keep only the first of any same-time picks
   return picks.filter(([, date], i) => picks.findIndex(([, other]) => other.getTime() === date.getTime()) === i);
-}
-
-// The value a <input type="datetime-local"> needs: local "YYYY-MM-DDTHH:mm".
-export function toDateTimeInput(date) {
-  const pad = n => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 // A position between two neighbours in the user's order (either may be missing).

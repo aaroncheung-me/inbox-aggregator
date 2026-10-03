@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { searchMessagesBasic } from '../../api';
-import { noteTitle, reminderQuickPicks, toDateTimeInput } from './notes';
+import { noteTitle, reminderQuickPicks } from './notes';
+import { nextFullHour, toDateTimeInput } from '../../format';
 
 // Inline pickers shown under a note when adding an add-on. Each calls
 // onPick(value) and the parent attaches it: an ISO time for reminders, the
 // picked email or note object for links (so a label can be shown before saving).
 
 export function ReminderPicker({ initial, onPick, onCancel }) {
-  const [custom, setCustom] = useState(() => toDateTimeInput(initial ? new Date(initial) : nextHour()));
+  const [custom, setCustom] = useState(() => toDateTimeInput(initial ? new Date(initial) : nextFullHour()));
 
   return (
     <div className="addon-picker">
@@ -26,12 +27,6 @@ export function ReminderPicker({ initial, onPick, onCancel }) {
       </div>
     </div>
   );
-}
-
-function nextHour() {
-  const d = new Date();
-  d.setHours(d.getHours() + 1, 0, 0, 0);
-  return d;
 }
 
 // Finds an email with the same basic search as the Search box (from:, after:... work too).

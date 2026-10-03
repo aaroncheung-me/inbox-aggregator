@@ -1,6 +1,6 @@
 // Dragging things to open them (desktop): an email or note from a list onto
-// the tab bar opens it in a new tab; a tab onto the writing screen's right
-// half shows it beside the email being written.
+// the tab bar or the page opens it in a new tab; a list row or a tab onto
+// either half of the writing screen shows it beside the email being written.
 
 const ITEM_TYPE = 'application/x-inbox-item';
 const TAB_TYPE = 'application/x-inbox-tab';
@@ -34,6 +34,8 @@ export function startTabDrag(e, key) {
 
 export const isTabDrag = e => [...e.dataTransfer.types].includes(TAB_TYPE);
 
+export const droppedTab = e => e.dataTransfer.getData(TAB_TYPE) || null;
+
 // A middle click, as props: auxclick doesn't fire on draggable elements, so
 // it's the middle button's release (its press is kept from starting the
 // browser's autoscroll).
@@ -43,4 +45,3 @@ export function middleClickProps(onMiddleClick) {
     onMouseUp: e => { if (e.button === 1) onMiddleClick(e); },
   };
 }
-export const droppedTab = e => e.dataTransfer.getData(TAB_TYPE) || null;

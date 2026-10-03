@@ -52,26 +52,16 @@ export function useSync({ syncNow, list, setAccounts, setTemp, setNotes, refresh
 
     // Sync right after connecting an account, or when opening the app with stale
     // mail. The saved messages show immediately; new ones appear when this finishes.
-    const syncNeeded = syncNow
-      ? Promise.resolve(true)
-      : accountsLoaded.then(accounts => {
-          const oldest = oldestSyncTime(accounts);
-          return accounts.length > 0 && (!oldest || Date.now() - new Date(oldest).getTime() > SYNC_ON_OPEN_AFTER_MS);
-        });
-
-    syncNeeded
-      .then(needed => {
-        if (!needed) return;
-        setSyncing(true);
-        const version = list.startReload();
-        return syncAndReload(list.folderRef.current).then(({ accounts, page, temp }) => {
-          setAccounts(accounts);
-          if (temp) setTemp(temp);
-          list.showNewMail(page, version);
-        });
+    if (syncNow) {
+      sync();
+      return;
+    }
+    accountsLoaded
+      .then(accounts => {
+        const oldest = oldestSyncTime(accounts);
+        if (accounts.length > 0 && (!oldest || Date.now() - new Date(oldest).getTime() > SYNC_ON_OPEN_AFTER_MS)) sync();
       })
-      .catch(err => console.error(err))
-      .finally(() => setSyncing(false));
+      .catch(() => {});
   // only on opening the app
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

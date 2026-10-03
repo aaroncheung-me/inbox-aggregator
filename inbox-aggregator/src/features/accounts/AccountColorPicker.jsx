@@ -7,7 +7,7 @@ import { useDismiss } from '../../hooks/useDismiss';
 function AccountColorPicker({ account, onChangeColor, dashed = false }) {
   const [open, setOpen] = useState(false);
   const pickerRef = useRef(null);
-  useDismiss(pickerRef, open, setOpen);
+  useDismiss(pickerRef, open, () => setOpen(false));
 
   const name = account.display_name || account.email_address;
   const current = (account.color || '').toLowerCase();

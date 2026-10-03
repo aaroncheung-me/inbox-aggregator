@@ -2,15 +2,11 @@ import { useState } from 'react';
 import EmailStickyNotes from '../notes/EmailStickyNotes';
 import PaneBar from '../../ui/PaneBar';
 import ActionMenu from '../../ui/ActionMenu';
-import { fileSize, timeLeft } from '../../format';
-import { downloadAttachment } from '../../api';
+import { timeLeft } from '../../format';
 import { useEmailHtml } from './useEmailHtml';
 import { useConversation } from './useConversation';
-import { useLoadImages } from '../settings/loadImages';
-import EmailHtml from './EmailHtml';
 import ConversationItem from './ConversationItem';
-import PlainBody from './PlainBody';
-import { hasWebImages } from './webImages';
+import EmailContent from './EmailContent';
 
 // One email in the main pane. Its actions sit in the top bar: on a phone,
 // Reply plus a More menu for the rest, since the full row doesn't fit.
@@ -23,7 +19,6 @@ import { hasWebImages } from './webImages';
 // open. onOpenMessage(id) makes another of them the opened email.
 function EmailDetail({ back, messageId, message, account, tempColors, loading, error, now, allNotes, onOpenNote, onOpenMessage, onCreateNote, onAiCreateNote, onReply, onTogglePin }) {
   const [writingNote, setWritingNote] = useState(false);
-  const [download, setDownload] = useState(null); // { id, error? } of the attachment being saved
   const ready = Boolean(message && !loading && !error);
   const formatted = useEmailHtml(messageId);
   // every email of its conversation, this one included; two or more means one is shown
@@ -31,24 +26,6 @@ function EmailDetail({ back, messageId, message, account, tempColors, loading, e
   const inConversation = conversation.length > 1;
   // the oldest keeps its quoted copy: it may hold what came before the conversation
   const oldestId = inConversation ? conversation[conversation.length - 1].id : null;
-  // images from the web: per the setting, or shown for this email on request
-  const loadImagesSetting = useLoadImages();
-  const [showImages, setShowImages] = useState(false);
-  const loadImages = loadImagesSetting || showImages;
-  const imagesHidden = !loadImages && hasWebImages(formatted.html);
-
-  async function save(attachment) {
-    setDownload({ id: attachment.id });
-    try {
-      await downloadAttachment(attachment);
-      setDownload(null);
-    } catch (err) {
-      setDownload({ id: attachment.id, error: err.message });
-    }
-  }
-
-  // images shown inside the email aren't listed again as attachments
-  const attachments = (message?.attachments || []).filter(a => !formatted.inlinePartIds.includes(a.external_id));
 
   let body;
   if (loading) body = <div className="email-detail">Loading...</div>;
@@ -101,40 +78,7 @@ function EmailDetail({ back, messageId, message, account, tempColors, loading, e
             ))}
           </section>
         ) : (
-          <>
-            <div className="meta">
-              {message.sender} · {new Date(message.received_at).toLocaleString()}
-              <div className="meta-recipients">To: {message.to_recipients || '(nobody)'}</div>
-              {message.cc_recipients && <div className="meta-recipients">Cc: {message.cc_recipients}</div>}
-            </div>
-            {attachments.length > 0 && (
-              <ul className="attachments">
-                {attachments.map(a => (
-                  <li key={a.id}>
-                    <button type="button" onClick={() => save(a)} disabled={download?.id === a.id && !download.error}>
-                      <span className="attachment-name">{a.filename || '(unnamed attachment)'}</span>
-                      <span className="attachment-size">{download?.id === a.id && !download.error ? 'Saving...' : fileSize(a.size_bytes)}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {download?.error && <p className="form-error">{download.error}</p>}
-            {imagesHidden && (
-              <div className="images-hidden">
-                <span>Images from the web are hidden.</span>
-                <button type="button" className="btn btn-ghost btn-small" onClick={() => setShowImages(true)}>Show images</button>
-              </div>
-            )}
-            {formatted.html ? (
-              <EmailHtml html={formatted.html} loadImages={loadImages} />
-            ) : formatted.status === 'loading' ? (
-              <div className="email-html-loading">Loading email...</div>
-            ) : (
-              // a plain-text email, or the formatted version couldn't be loaded
-              <PlainBody text={formatted.text || message.body || message.snippet} />
-            )}
-          </>
+          <EmailContent message={message} formatted={formatted} />
         )}
       </div>
     );

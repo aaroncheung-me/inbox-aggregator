@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
 import { trimQuotedHtml } from './quotes';
+import QuotedToggle from './QuotedToggle';
 
 // An email's formatted (HTML) version, shown the way mail apps do: in a frame
 // that can't run scripts, submit forms or reach the app, sized to its content
@@ -129,18 +130,7 @@ function EmailHtml({ html, loadImages = true, hideQuoted = false }) {
         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
         srcDoc={srcDoc}
       />
-      {(quoted || showQuoted) && (
-        <button
-          type="button"
-          className="quoted-toggle"
-          onClick={() => setShowQuoted(prev => !prev)}
-          aria-expanded={showQuoted}
-          aria-label={showQuoted ? 'Hide quoted text' : 'Show quoted text'}
-          title={showQuoted ? 'Hide quoted text' : 'Show quoted text'}
-        >
-          ⋯
-        </button>
-      )}
+      {(quoted || showQuoted) && <QuotedToggle shown={showQuoted} onToggle={() => setShowQuoted(prev => !prev)} />}
     </>
   );
 }

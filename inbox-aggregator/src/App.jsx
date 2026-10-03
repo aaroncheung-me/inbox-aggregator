@@ -108,6 +108,7 @@ function App({ userEmail, onSignOut }) {
     reloadMessages: list.reload,
     refreshNotes: notes.refresh,
     refreshStatus: status.refresh,
+    onNoteDeleted: noteId => nav.closeNote(noteId),
     onScheduled: scheduled.refresh,
   });
   const { draft } = compose;
@@ -227,7 +228,7 @@ function App({ userEmail, onSignOut }) {
   function handleAsk(question) {
     const openMessageId = nav.selectedMessageId;
     nav.openChat();
-    chat.ask(question, openMessageId);
+    chat.ask(question, { openMessageId });
   }
 
   // Search looks through whatever the tab lists: emails on Inbox (and while
@@ -270,10 +271,21 @@ function App({ userEmail, onSignOut }) {
     if (next === 'sent') scheduled.refresh();
   }
 
+  const accountOf = id => accounts.accounts.find(a => a.id === id);
   const scheduledItem = scheduled.scheduled.find(s => s.id === nav.selectedScheduledId) || null;
   const selectedNote = notes.notes.find(note => note.id === nav.selectedNoteId) || null;
-  const selectedAccount = accounts.accounts.find(a => a.id === openEmail.message?.account_id);
+  const besideNote = nav.beside?.kind === 'note' ? notes.notes.find(n => n.id === nav.beside.id) : null;
   const dueCount = dueReminderCount(notes.notes, now);
+
+  // an email as the main pane shows it, from its useOpenEmail
+  const emailView = (messageId, loaded) => ({
+    messageId,
+    message: loaded.message,
+    account: accountOf(loaded.message?.account_id),
+    loading: loaded.loading,
+    error: loaded.error,
+    onTogglePin: loaded.togglePin,
+  });
 
   return (
     <div className={`app phone-shows-${nav.phoneScreen}${sidebar === 'closed' ? ' sidebar-closed' : ''}`}>
@@ -284,113 +296,92 @@ function App({ userEmail, onSignOut }) {
         </div>
       )}
       <Sidebar
+        askBar={{
+          ...askBarProps,
+          // while writing an email, the ask box asks that email's assistant
+          onAsk: drafting ? compose.ask : handleAsk,
+          onSearch: handleSearch,
+          asking: drafting ? compose.chat.loading : chat.loading,
+          autoFocus: launchAction === 'ask',
+        }}
+        onNewEmail={compose.newEmail}
         onCollapse={() => setSidebar('closed')}
-        creditsBanner={(
-          <CreditsBanner
-            problems={status.problems}
-            hiddenSince={status.hidden}
-            onHide={status.hide}
-          />
-        )}
-        // while writing an email, the ask box asks that email's assistant
-        onAsk={drafting ? compose.ask : handleAsk}
-        askMode={askMode}
-        onAskModeChange={setAskMode}
-        askResetKey={askBarProps.resetKey}
-        focusAskBox={launchAction === 'ask'}
-        focusNoteBox={launchAction === 'new-note'}
-        chatCount={chat.history.length}
-        onOpenChat={nav.openChat}
-        asking={drafting ? compose.chatLoading : chat.loading}
-        lastSyncedAt={oldestSyncTime(accounts.accounts)}
-        onSync={sync.sync}
-        syncing={sync.syncing}
-        messages={list.messages}
-        tempColors={temp.colors}
-        pinned={list.pinned}
-        selectedId={nav.selectedMessageId}
-        onSelect={(id, opts) => openEmailTab(id, null, opts)}
-        hasMore={list.messages.length < list.total}
-        loadingMore={list.loadingMore}
-        onLoadMore={list.loadMore}
-        total={list.total}
+        creditsBanner={<CreditsBanner problems={status.problems} hiddenSince={status.hidden} onHide={status.hide} />}
         notice={notice}
         onDismissNotice={() => setNotice(null)}
-        accounts={accounts.accounts}
-        onToggleAccount={accounts.toggle}
-        onChangeAccountColor={accounts.changeColor}
-        onAccountConnected={handleAccountConnected}
-        userEmail={userEmail}
-        onSignOut={onSignOut}
-        onOpenSettings={nav.openSettings}
-        settingsOpen={nav.settingsVisible}
-        search={search.search}
-        onSearch={handleSearch}
-        onClearSearch={clearSearch}
-        onLoadMoreSearch={search.loadMore}
         tab={nav.tab}
         onTabChange={handleTabChange}
-        folder={list.folder}
-        onFolderChange={handleFolderChange}
-        scheduled={scheduled.scheduled}
-        selectedScheduledId={nav.selectedScheduledId}
-        onOpenScheduled={nav.openScheduled}
         dueCount={dueCount}
-        notes={notes.notes}
-        now={now}
-        selectedNoteId={nav.selectedNoteId}
-        onSelectNote={(id, opts) => nav.openNote(id, opts)}
-        onCreateNote={handleCreateNote}
-        onAiCreateNote={handleAiSaveNote}
-        onMoveNote={notes.move}
-        onSuggestOrganizing={notes.suggest}
-        onApplyOrganizing={notes.applyOrganizing}
-        noteQuery={noteQuery}
-        onClearNoteQuery={clearNoteQuery}
-        onStartNote={nav.openNewNote}
-        onNewEmail={compose.newEmail}
-        // phone: an email being written while something else shows, to go back to
-        waitingDraft={draft && !nav.draftVisible ? { title: tabLabel({ kind: 'draft' }), onShow: nav.showDraft } : null}
-        tempAddresses={{
-          temp: temp.temp,
-          now,
-          onCreate: temp.create,
-          onExtend: temp.extend,
-          onToggle: temp.toggle,
-          onChangeColor: temp.changeColor,
-          onDelete: temp.remove,
+        chatCount={chat.history.length}
+        onOpenChat={nav.openChat}
+        inbox={{
+          folder: list.folder,
+          onFolderChange: handleFolderChange,
+          messages: list.messages,
+          pinned: list.pinned,
+          total: list.total,
+          hasMore: list.messages.length < list.total,
+          loadingMore: list.loadingMore,
+          onLoadMore: list.loadMore,
+          selectedId: nav.selectedMessageId,
+          onSelect: (id, opts) => openEmailTab(id, null, opts),
+          tempColors: temp.colors,
+          scheduled: scheduled.scheduled,
+          selectedScheduledId: nav.selectedScheduledId,
+          onOpenScheduled: nav.openScheduled,
+          lastSyncedAt: oldestSyncTime(accounts.accounts),
+          onSync: sync.sync,
+          syncing: sync.syncing,
         }}
+        search={search.search && { ...search.search, onClear: clearSearch, onLoadMore: search.loadMore }}
+        notesPanel={{
+          notes: notes.notes,
+          now,
+          selectedNoteId: nav.selectedNoteId,
+          onSelect: (id, opts) => nav.openNote(id, opts),
+          onCreate: handleCreateNote,
+          onAiCreate: handleAiSaveNote,
+          onMove: notes.move,
+          onSuggestOrganizing: notes.suggest,
+          onApplyOrganizing: notes.applyOrganizing,
+          autoFocusComposer: launchAction === 'new-note',
+          query: noteQuery,
+          onClearQuery: clearNoteQuery,
+          onStartNote: nav.openNewNote,
+        }}
+        accountsPanel={{
+          accounts: accounts.accounts,
+          onToggleAccount: accounts.toggle,
+          onChangeColor: accounts.changeColor,
+          onAccountConnected: handleAccountConnected,
+          tempAddresses: {
+            temp: temp.temp,
+            now,
+            onCreate: temp.create,
+            onExtend: temp.extend,
+            onToggle: temp.toggle,
+            onChangeColor: temp.changeColor,
+            onDelete: temp.remove,
+          },
+        }}
+        user={{ email: userEmail, onSignOut, onOpenSettings: nav.openSettings, settingsOpen: nav.settingsVisible }}
         drafting={drafting && {
           title: DRAFT_TITLES[draft.mode],
           onBackToDraft: nav.showDraft,
           onDiscard: compose.discard,
           chat: (
             <DraftAssistant
-              history={compose.chat}
-              loading={compose.chatLoading}
-              pending={compose.chatPending}
-              error={compose.chatError}
+              chat={compose.chat}
               onUseDraft={compose.applyAiDraft}
               onOpenMessage={(id, hint) => openEmailTab(id, hint)}
               onOpenNote={id => nav.openNote(id)}
-              onUndoCreatedNote={compose.undoChatNote}
             />
           ),
         }}
+        // phone: an email being written while something else shows, to go back to
+        waitingDraft={draft && !nav.draftVisible ? { title: tabLabel({ kind: 'draft' }), onShow: nav.showDraft } : null}
       />
       <MainPane
-        selectedMessageId={nav.selectedMessageId}
-        selectedMessage={openEmail.message}
-        selectedAccount={selectedAccount}
-        tempColors={temp.colors}
-        messageLoading={openEmail.loading}
-        messageError={openEmail.error}
-        chatHistory={chat.history}
-        chatLoading={chat.loading}
-        chatPending={chat.pending}
-        chatError={chat.error}
-        chatVisible={nav.chatVisible}
-        onNewChat={chat.newChat}
         tabs={{
           tabs: nav.tabs.map(t => ({ ...t, label: tabLabel(t) })),
           activeKey: nav.active?.key ?? null,
@@ -411,36 +402,63 @@ function App({ userEmail, onSignOut }) {
           onSwapBeside: () => setBesideSide(besideSide === 'left' ? 'right' : 'left'),
         }}
         besideSide={besideSide}
+        email={nav.selectedMessageId != null ? { ...emailView(nav.selectedMessageId, openEmail), onReply: handleReply } : null}
+        beside={nav.beside?.kind === 'email'
+          ? { kind: 'email', ...emailView(nav.beside.id, besideEmail) }
+          : besideNote ? { kind: 'note', note: besideNote } : null}
+        note={selectedNote}
+        notes={{
+          notes: notes.notes,
+          now,
+          actions: noteActions,
+          aiHeadsUp: notes.aiHeadsUp,
+          onDismissAiHeadsUp: notes.dismissAiHeadsUp,
+        }}
+        chat={{
+          visible: nav.chatVisible,
+          history: chat.history,
+          loading: chat.loading,
+          pending: chat.pending,
+          error: chat.error,
+          onNewChat: () => chat.reset(),
+          onUndoCreatedNote: chat.undoCreatedNote,
+        }}
+        settings={{ visible: nav.settingsVisible, accounts: accounts.accounts, onChangeSignature: accounts.changeSignature }}
+        scheduled={scheduledItem && {
+          item: scheduledItem,
+          account: accountOf(scheduledItem.accountId),
+          onEdit: async () => { if (await compose.editScheduled(scheduledItem)) nav.closeScheduled(scheduledItem.id); },
+          onSendNow: async () => {
+            await scheduled.sendNow(scheduledItem.id);
+            nav.closeScheduled(scheduledItem.id);
+            setNotice({ type: 'success', text: 'Sending it now' });
+          },
+          onCancel: async () => {
+            await scheduled.cancel(scheduledItem.id);
+            nav.closeScheduled(scheduledItem.id);
+          },
+        }}
+        compose={draft && {
+          draft,
+          visible: nav.draftVisible,
+          accounts: accounts.accounts,
+          sending: compose.sending,
+          onChange: compose.update,
+          onAddFiles: compose.addFiles,
+          onRemoveAttachment: compose.removeAttachment,
+          // wrapped: a click event must not be taken for Send later's time
+          onSend: () => compose.send(),
+          onSchedule: date => compose.send(date),
+          onDiscard: compose.discard,
+          onUndoAiDraft: compose.undoAiDraft,
+          onShowAssistant: nav.showListScreen,
+        }}
         newNote={nav.newNoteVisible && {
           text: newNoteText,
           onTextChange: setNewNoteText,
           onBack: nav.showListScreen,
           onDiscard: discardNewNote,
         }}
-        selectedNote={selectedNote}
-        notes={notes.notes}
-        now={now}
-        noteActions={noteActions}
-        aiHeadsUp={notes.aiHeadsUp}
-        onDismissAiHeadsUp={notes.dismissAiHeadsUp}
-        onOpenMessage={(id, hint) => openEmailTab(id, hint)}
-        onUndoCreatedNote={chat.undoCreatedNote}
-        beside={nav.beside?.kind === 'email' ? {
-          kind: 'email',
-          messageId: nav.beside.id,
-          message: besideEmail.message,
-          account: accounts.accounts.find(a => a.id === besideEmail.message?.account_id),
-          loading: besideEmail.loading,
-          error: besideEmail.error,
-          onTogglePin: besideEmail.togglePin,
-        } : nav.beside?.kind === 'note' && notes.notes.some(n => n.id === nav.beside.id) ? {
-          kind: 'note',
-          note: notes.notes.find(n => n.id === nav.beside.id),
-        } : null}
-        onBackToList={nav.showListScreen}
-        // while writing, the list screen is the email's assistant
-        backLabel={drafting ? 'Assistant' : nav.tab === 'notes' ? 'Notes' : 'Inbox'}
-        onReply={handleReply}
         // Phone: emails, notes and answers keep the list screen's top (the ask
         // box and Inbox | Notes), so moving between screens doesn't change the
         // layout; the tabs lead back to the lists. Not on the writing screen,
@@ -461,40 +479,11 @@ function App({ userEmail, onSignOut }) {
             />
           </div>
         )}
-        onTogglePin={openEmail.togglePin}
-        settingsVisible={nav.settingsVisible}
-        scheduled={scheduledItem && {
-          item: scheduledItem,
-          account: accounts.accounts.find(a => a.id === scheduledItem.accountId),
-          onEdit: async () => { if (await compose.editScheduled(scheduledItem)) nav.closeScheduled(scheduledItem.id); },
-          onSendNow: async () => {
-            await scheduled.sendNow(scheduledItem.id);
-            nav.closeScheduled(scheduledItem.id);
-            setNotice({ type: 'success', text: 'Sending it now' });
-          },
-          onCancel: async () => {
-            await scheduled.cancel(scheduledItem.id);
-            nav.closeScheduled(scheduledItem.id);
-          },
-        }}
-        accounts={accounts.accounts}
-        onChangeSignature={accounts.changeSignature}
-        compose={draft && {
-          draft,
-          visible: nav.draftVisible,
-          accounts: accounts.accounts,
-          sending: compose.sending,
-          onChange: compose.update,
-          onAddFiles: compose.addFiles,
-          onRemoveAttachment: compose.removeAttachment,
-          // wrapped: a click event must not be taken for Send later's time
-          onSend: () => compose.send(),
-          onSchedule: date => compose.send(date),
-          onDiscard: compose.discard,
-          onUndoAiDraft: compose.undoAiDraft,
-          onShowAssistant: nav.showListScreen,
-          onShow: nav.showDraft,
-        }}
+        tempColors={temp.colors}
+        onOpenMessage={(id, hint) => openEmailTab(id, hint)}
+        onBackToList={nav.showListScreen}
+        // while writing, the list screen is the email's assistant
+        backLabel={drafting ? 'Assistant' : nav.tab === 'notes' ? 'Notes' : 'Inbox'}
       />
       {compose.outgoing && (
         <SendingBar

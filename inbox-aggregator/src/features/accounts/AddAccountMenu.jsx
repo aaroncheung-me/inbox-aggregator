@@ -17,7 +17,7 @@ function AddAccountMenu({ onAccountConnected, onNewTemp }) {
   const [startingSignIn, setStartingSignIn] = useState(false);
   const [error, setError] = useState(null);
   const menuRef = useRef(null);
-  useDismiss(menuRef, open, setOpen);
+  useDismiss(menuRef, open, () => setOpen(false));
 
   async function handleChoose(option) {
     setError(null);

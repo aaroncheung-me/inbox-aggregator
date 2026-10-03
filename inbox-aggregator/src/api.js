@@ -17,43 +17,69 @@ async function apiFetch(path, options = {}) {
   return res;
 }
 
-function jsonBody(body) {
-  return { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+// Calls the API. A failure throws the server's explanation when it gave one
+// (a 400 with { error }, e.g. "The server rejected that email/password"), else `fallback`.
+async function request(path, fallback, options) {
+  const res = await apiFetch(path, options);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error || fallback);
+  }
+  return res;
 }
 
-// folder: 'inbox' or 'sent'
-export async function getMessages({ limit = 25, offset = 0, folder = 'inbox' } = {}) {
-  const res = await apiFetch(`/messages?limit=${limit}&offset=${offset}&folder=${folder}`);
-  if (!res.ok) throw new Error('Failed to load messages');
-  return res.json();
+async function getJson(path, fallback, options) {
+  return (await request(path, fallback, options)).json();
 }
 
-export async function getMessage(messageId) {
-  const res = await apiFetch(`/messages/${messageId}`);
-  if (!res.ok) throw new Error('Failed to load message');
-  return res.json();
+// options for a request with a JSON body
+function withJson(method, body) {
+  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
-// The email's formatted version: { html, inlinePartIds }. html is null for plain-text email.
-export async function getMessageHtml(messageId) {
-  const res = await apiFetch(`/messages/${messageId}/html`);
-  if (!res.ok) throw new Error("Couldn't load this email's formatting");
-  return res.json();
+const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// ---------- email ----------
+
+// folder: 'inbox' or 'sent'. The first page also has the pinned emails.
+export function getMessages({ limit = 25, offset = 0, folder = 'inbox' } = {}) {
+  return getJson(`/messages?limit=${limit}&offset=${offset}&folder=${folder}`, 'Failed to load messages');
 }
 
-// The other emails in its conversation, newest first:
-// [{ id, account_id, sender, to_recipients, subject, snippet, received_at, labels }].
-export async function getConversation(messageId) {
-  const res = await apiFetch(`/messages/${messageId}/conversation`);
-  if (!res.ok) throw new Error("Couldn't load the conversation");
-  return res.json();
+// Basic search, no AI: words plus from:/after:/before:/has:attachment operators.
+export function searchMessagesBasic(query, { limit = 25, offset = 0 } = {}) {
+  return getJson(`/messages/search?${new URLSearchParams({ q: query, limit, offset })}`, 'Search failed');
+}
+
+export function getMessage(messageId) {
+  return getJson(`/messages/${messageId}`, 'Failed to load message');
+}
+
+// The email's formatted version: { html, text, inlinePartIds }. html is null
+// for a plain-text email, whose whole text is in text.
+export function getMessageHtml(messageId) {
+  return getJson(`/messages/${messageId}/html`, "Couldn't load this email's formatting");
+}
+
+// Every email of its conversation, itself included, newest first:
+// [{ id, account_id, sender, to_recipients, subject, snippet, received_at, labels, from_me }].
+export function getConversation(messageId) {
+  return getJson(`/messages/${messageId}/conversation`, "Couldn't load the conversation");
+}
+
+// Pins live only in the app. Returns { pinned_at }.
+export function pinMessage(messageId, pinned) {
+  return getJson(`/messages/${messageId}`, pinned ? "Couldn't pin that email" : "Couldn't unpin that email", withJson('PATCH', { pinned }));
+}
+
+// { replyTo }: where replies should go when the sender set a Reply-To, else null.
+export async function getReplyInfo(messageId) {
+  return getJson(`/messages/${messageId}/reply-info`, 'Lookup failed').catch(() => ({ replyTo: null }));
 }
 
 // Saves an attachment ({ id, filename }) to the device.
 export async function downloadAttachment(attachment) {
-  const res = await apiFetch(`/attachments/${attachment.id}`);
-  if (!res.ok) await failWith(res, 'Downloading the attachment failed');
-
+  const res = await request(`/attachments/${attachment.id}`, 'Downloading the attachment failed');
   const url = URL.createObjectURL(await res.blob());
   const link = document.createElement('a');
   link.href = url;
@@ -64,139 +90,102 @@ export async function downloadAttachment(attachment) {
   setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
 }
 
-export async function getAccounts() {
-  const res = await apiFetch('/accounts');
-  if (!res.ok) throw new Error('Failed to load accounts');
-  return res.json();
+// ---------- accounts ----------
+
+export function getAccounts() {
+  return getJson('/accounts', 'Failed to load accounts');
 }
 
-export async function updateAccount(accountId, changes) {
-  const res = await apiFetch(`/accounts/${accountId}`, { method: 'PATCH', ...jsonBody(changes) });
-  if (!res.ok) throw new Error('Failed to update account');
-  return res.json();
+// changes: { show_in_inbox?, color?, signature? }
+export function updateAccount(accountId, changes) {
+  return getJson(`/accounts/${accountId}`, 'Failed to update account', withJson('PATCH', changes));
 }
 
-export async function syncAll() {
-  const res = await apiFetch('/sync', { method: 'POST' });
-  if (!res.ok) throw new Error('Sync failed');
-  return res.json();
+export function syncAll() {
+  return getJson('/sync', 'Sync failed', { method: 'POST' });
 }
 
 // Sign-in-based connects (Gmail): the server returns the provider's sign-in
 // URL, and the browser goes there. It comes back with ?connected= or ?connect_error=
 export async function startSignInConnect(provider) {
-  const res = await apiFetch(`/connect/${provider}`, { method: 'POST' });
-  if (!res.ok) throw new Error('Could not start connecting the account');
-  const { url } = await res.json();
+  const { url } = await getJson(`/connect/${provider}`, 'Could not start connecting the account', { method: 'POST' });
   window.location.assign(url);
 }
 
-// Throws with the server's explanation (e.g. "The server rejected that email/password") when it has one.
-export async function connectImap({ email, password, host, port }) {
-  const res = await apiFetch('/connect/imap', { method: 'POST', ...jsonBody({ email, password, host, port }) });
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.error || 'Connecting failed, check the server terminal');
-  }
-  return res.json();
+export function connectImap({ email, password, host, port }) {
+  return getJson('/connect/imap', 'Connecting failed, check the server terminal', withJson('POST', { email, password, host, port }));
+}
+
+// ---------- temp addresses ----------
+
+// { available, reason, domain, addresses: [{ id, address, label, color,
+// show_in_inbox, created_at, expires_at, received }] }
+export function getTempAddresses() {
+  return getJson('/temp-addresses', 'Failed to load temp addresses');
+}
+
+// lifetime: '1h' | '1d' | '1w' | '1m'. Returns the new address.
+export function createTempAddress(lifetime, label) {
+  return getJson('/temp-addresses', "Couldn't make a temp address, try again", withJson('POST', { lifetime, label }));
+}
+
+// changes: { lifetime? (keeps it that long from now), color?, show_in_inbox? }
+export function updateTempAddress(id, changes) {
+  return getJson(`/temp-addresses/${id}`, "Couldn't change that address", withJson('PATCH', changes));
+}
+
+// Deletes it now, with the emails it received.
+export async function deleteTempAddress(id) {
+  await request(`/temp-addresses/${id}`, "Couldn't delete that address", { method: 'DELETE' });
 }
 
 // ---------- notes ----------
 
-// Throws with the server's explanation when it gave one (a 400 with { error }).
-async function failWith(res, fallback) {
-  const body = await res.json().catch(() => null);
-  throw new Error(body?.error || fallback);
-}
-
-export async function getNotes() {
-  const res = await apiFetch('/notes');
-  if (!res.ok) throw new Error('Failed to load notes');
-  return res.json();
+export function getNotes() {
+  return getJson('/notes', 'Failed to load notes');
 }
 
 // addons: [{ kind, remindAt?, messageId?, noteId? }], attached as it's created. Returns { id }.
-export async function createNote(body, addons = []) {
-  const res = await apiFetch('/notes', { method: 'POST', ...jsonBody({ body, addons }) });
-  if (!res.ok) await failWith(res, 'Failed to save the note');
-  return res.json();
+export function createNote(body, addons = []) {
+  return getJson('/notes', 'Failed to save the note', withJson('POST', { body, addons }));
 }
 
 // The AI rewrites the text and adds a reminder, pin and links as it sees fit,
 // on top of any addons picked by hand. Returns { id, message, usage }.
-export async function aiSaveNote(text, addons = []) {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const res = await apiFetch('/notes/ai-save', { method: 'POST', ...jsonBody({ text, addons, timeZone }) });
-  if (!res.ok) await failWith(res, 'AI save failed, try again or use Save');
-  return res.json();
+export function aiSaveNote(text, addons = []) {
+  return getJson('/notes/ai-save', 'AI save failed, try again or use Save', withJson('POST', { text, addons, timeZone: timeZone() }));
 }
 
 // The AI's suggestions for tidying the notes; nothing is changed.
 // Returns { changes: [{ action, noteId, otherNoteId, title, otherTitle, reason }], order, usage }.
-export async function suggestOrganizing() {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const res = await apiFetch('/notes/organize', { method: 'POST', ...jsonBody({ timeZone }) });
-  if (!res.ok) await failWith(res, 'Organize failed, try again');
-  return res.json();
+export function suggestOrganizing() {
+  return getJson('/notes/organize', 'Organize failed, try again', withJson('POST', { timeZone: timeZone() }));
 }
 
 // changes: { body?, position? }
 export async function updateNote(noteId, changes) {
-  const res = await apiFetch(`/notes/${noteId}`, { method: 'PATCH', ...jsonBody(changes) });
-  if (!res.ok) await failWith(res, 'Failed to update the note');
+  await request(`/notes/${noteId}`, 'Failed to update the note', withJson('PATCH', changes));
 }
 
 export async function deleteNote(noteId) {
-  const res = await apiFetch(`/notes/${noteId}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error('Failed to delete the note');
+  await request(`/notes/${noteId}`, 'Failed to delete the note', { method: 'DELETE' });
 }
 
 // addon: { kind: 'reminder' | 'email_link' | 'note_link' | 'pin', remindAt?, messageId?, noteId? }
-export async function addNoteAddon(noteId, addon) {
-  const res = await apiFetch(`/notes/${noteId}/addons`, { method: 'POST', ...jsonBody(addon) });
-  if (!res.ok) await failWith(res, 'Failed to add that to the note');
-  return res.json();
+export function addNoteAddon(noteId, addon) {
+  return getJson(`/notes/${noteId}/addons`, 'Failed to add that to the note', withJson('POST', addon));
 }
 
 // changes: { remindAt?, done? } (reminders only)
 export async function updateNoteAddon(addonId, changes) {
-  const res = await apiFetch(`/note-addons/${addonId}`, { method: 'PATCH', ...jsonBody(changes) });
-  if (!res.ok) await failWith(res, 'Failed to update the reminder');
+  await request(`/note-addons/${addonId}`, 'Failed to update the reminder', withJson('PATCH', changes));
 }
 
 export async function removeNoteAddon(addonId) {
-  const res = await apiFetch(`/note-addons/${addonId}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error('Failed to remove that from the note');
+  await request(`/note-addons/${addonId}`, 'Failed to remove that from the note', { method: 'DELETE' });
 }
 
-// Recent out-of-credits problems with Anthropic or OpenAI (including ones hit
-// by background syncs): { problems: [{ provider, message, since }] }
-export async function getStatus() {
-  const res = await apiFetch('/status');
-  if (!res.ok) throw new Error('Failed to load status');
-  return res.json();
-}
-
-// ---------- voice ----------
-
-// A recording (Blob from MediaRecorder) -> the words spoken in it.
-export async function transcribeRecording(recording) {
-  const res = await apiFetch('/transcribe', {
-    method: 'POST',
-    headers: { 'Content-Type': recording.type || 'audio/webm' },
-    body: recording,
-  });
-  if (!res.ok) await failWith(res, 'Transcription failed, try again');
-  return (await res.json()).text;
-}
-
-// Basic search, no AI: words plus from:/after:/before:/has:attachment operators.
-export async function searchMessagesBasic(query, { limit = 25, offset = 0 } = {}) {
-  const params = new URLSearchParams({ q: query, limit, offset });
-  const res = await apiFetch(`/messages/search?${params}`);
-  if (!res.ok) throw new Error('Search failed');
-  return res.json();
-}
+// ---------- assistant, voice and AI status ----------
 
 // history: earlier exchanges in this chat, [{ question, answer }], so follow-up questions work.
 // openMessageId: the email open in the app, so "note this email" knows which one.
@@ -206,9 +195,8 @@ export async function searchMessagesBasic(query, { limit = 25, offset = 0 } = {}
 // { type: 'text', delta } or { type: 'text_reset' } (see the server's /ask route).
 // Returns { answer, sources, steps, createdNotes, draft, usage }.
 export async function askAssistant(question, history, { openMessageId = null, draft = null, onProgress = () => {} } = {}) {
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const res = await apiFetch('/ask', { method: 'POST', ...jsonBody({ question, history, openMessageId, timeZone, draft }) });
-  if (!res.ok) await failWith(res, 'The assistant failed, try again');
+  const res = await request('/ask', 'The assistant failed, try again',
+    withJson('POST', { question, history, openMessageId, timeZone: timeZone(), draft }));
 
   // one JSON event per line; a chunk can end partway through a line
   const reader = res.body.getReader();
@@ -230,106 +218,66 @@ export async function askAssistant(question, history, { openMessageId = null, dr
   }
 }
 
+// A recording (Blob from MediaRecorder) -> the words spoken in it.
+export async function transcribeRecording(recording) {
+  const { text } = await getJson('/transcribe', 'Transcription failed, try again', {
+    method: 'POST',
+    headers: { 'Content-Type': recording.type || 'audio/webm' },
+    body: recording,
+  });
+  return text;
+}
+
+// Recent out-of-credits problems with Anthropic or OpenAI (including ones hit
+// by background syncs): { problems: [{ provider, message, since }] }
+export function getStatus() {
+  return getJson('/status', 'Failed to load status');
+}
+
 // ---------- sending ----------
-
-// Pins live only in the app. Returns { pinned_at }.
-export async function pinMessage(messageId, pinned) {
-  const res = await apiFetch(`/messages/${messageId}`, { method: 'PATCH', ...jsonBody({ pinned }) });
-  if (!res.ok) throw new Error(pinned ? "Couldn't pin that email" : "Couldn't unpin that email");
-  return res.json();
-}
-
-// { replyTo }: where replies should go when the sender set a Reply-To, else null.
-export async function getReplyInfo(messageId) {
-  const res = await apiFetch(`/messages/${messageId}/reply-info`);
-  if (!res.ok) return { replyTo: null };
-  return res.json();
-}
-
-// email: { accountId, to, cc, bcc, subject, body, replyToMessageId, attachments,
-// forwardedAttachmentIds, sendAt? } (see POST /send). The server
-// waits 15 seconds before sending, so it can be undone. Returns { id, sendAt }.
-export async function sendEmail(email) {
-  const res = await apiFetch('/send', { method: 'POST', ...jsonBody(email) });
-  if (!res.ok) await failWith(res, 'Sending failed, try again');
-  return res.json();
-}
 
 // Uploads one file to attach to an email that's about to be sent. Returns
 // { uploadId } for sendEmail. Always sent as octet-stream, with the real type
 // beside it, so the server treats every file the same way.
-export async function uploadAttachment(file) {
-  const res = await apiFetch('/send/uploads', {
+export function uploadAttachment(file) {
+  return getJson('/send/uploads', `Uploading "${file.name}" failed, try again`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/octet-stream', 'X-Content-Type': file.type || 'application/octet-stream' },
     body: file,
   });
-  if (!res.ok) await failWith(res, `Uploading "${file.name}" failed, try again`);
-  return res.json();
+}
+
+// email: { accountId, to, cc, bcc, subject, body, replyToMessageId, attachments,
+// forwardedAttachmentIds, sendAt? } (see POST /send). The server waits 15
+// seconds before sending, so it can be undone, or until sendAt.
+// Returns { id, sendAt, scheduled }.
+export function sendEmail(email) {
+  return getJson('/send', 'Sending failed, try again', withJson('POST', email));
 }
 
 // { status: 'waiting' | 'sending' | 'sent' | 'failed', error }
-export async function getSendStatus(outboxId) {
-  const res = await apiFetch(`/send/${outboxId}`);
-  if (!res.ok) throw new Error('Could not check on that email');
-  return res.json();
+export function getSendStatus(outboxId) {
+  return getJson(`/send/${outboxId}`, 'Could not check on that email');
 }
 
-// Undo. Throws "Too late to undo..." once it has started sending.
+// Undo, or Cancel on a scheduled email. Throws once it has started sending.
 // keepFiles: its uploaded attachments stay, for a draft that still points at them.
 export async function cancelSend(outboxId, { keepFiles = false } = {}) {
-  const res = await apiFetch(`/send/${outboxId}${keepFiles ? '?edit=1' : ''}`, { method: 'DELETE' });
-  if (!res.ok) await failWith(res, 'Could not undo, check your Sent folder');
+  await request(`/send/${outboxId}${keepFiles ? '?edit=1' : ''}`, 'Could not undo, check your Sent folder', { method: 'DELETE' });
 }
-
-// ---------- send later ----------
 
 // Scheduled emails not sent yet (and failed ones): [{ id, accountId, sendAt,
 // failed, to, cc, bcc, subject, body, replyToMessageId, attachments, forwarded }].
-export async function getScheduled() {
-  const res = await apiFetch('/scheduled');
-  if (!res.ok) throw new Error('Failed to load scheduled emails');
-  return res.json();
+export function getScheduled() {
+  return getJson('/scheduled', 'Failed to load scheduled emails');
 }
 
 export async function sendScheduledNow(outboxId) {
-  const res = await apiFetch(`/send/${outboxId}/now`, { method: 'POST' });
-  if (!res.ok) await failWith(res, "Couldn't send it now, try again");
+  await request(`/send/${outboxId}/now`, "Couldn't send it now, try again", { method: 'POST' });
 }
 
 // Edit on a scheduled email: takes it back (its files stay uploaded) and
 // returns it, to reopen on the writing screen.
-export async function takeBackScheduled(outboxId) {
-  const res = await apiFetch(`/send/${outboxId}?edit=1`, { method: 'DELETE' });
-  if (!res.ok) await failWith(res, "Couldn't take it back, it may have been sent");
-  return res.json();
-}
-
-// ---------- temp addresses ----------
-
-// { available, reason, domain, addresses: [{ id, address, label, created_at, expires_at, received }] }
-export async function getTempAddresses() {
-  const res = await apiFetch('/temp-addresses');
-  if (!res.ok) throw new Error('Failed to load temp addresses');
-  return res.json();
-}
-
-// lifetime: '1h' | '1d' | '1w' | '1m'. Returns the new address.
-export async function createTempAddress(lifetime, label) {
-  const res = await apiFetch('/temp-addresses', { method: 'POST', ...jsonBody({ lifetime, label }) });
-  if (!res.ok) await failWith(res, "Couldn't make a temp address, try again");
-  return res.json();
-}
-
-// changes: { lifetime? (keeps it that long from now), color?, show_in_inbox? }
-export async function updateTempAddress(id, changes) {
-  const res = await apiFetch(`/temp-addresses/${id}`, { method: 'PATCH', ...jsonBody(changes) });
-  if (!res.ok) await failWith(res, "Couldn't change that address");
-  return res.json();
-}
-
-// Deletes it now, with the emails it received.
-export async function deleteTempAddress(id) {
-  const res = await apiFetch(`/temp-addresses/${id}`, { method: 'DELETE' });
-  if (!res.ok) await failWith(res, "Couldn't delete that address");
+export function takeBackScheduled(outboxId) {
+  return getJson(`/send/${outboxId}?edit=1`, "Couldn't take it back, it may have been sent", { method: 'DELETE' });
 }

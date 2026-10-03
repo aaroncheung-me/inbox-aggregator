@@ -147,15 +147,9 @@ function NotesPanel({
           <button className="notes-group-toggle" onClick={() => setShowDone(prev => !prev)} aria-expanded={showDone}>
             {showDone ? '▾' : '▸'} Done ({done.length})
           </button>
-          {showDone && (
-            <DndContext sensors={sensors}>
-              <SortableContext items={done.map(note => note.id)}>
-                {done.map(note => (
-                  <NoteListItem key={note.id} note={note} now={now} selected={note.id === selectedNoteId} onSelect={onSelect} sortable={false} />
-                ))}
-              </SortableContext>
-            </DndContext>
-          )}
+          {showDone && done.map(note => (
+            <NoteListItem key={note.id} note={note} now={now} selected={note.id === selectedNoteId} onSelect={onSelect} sortable={false} />
+          ))}
         </section>
       )}
     </div>

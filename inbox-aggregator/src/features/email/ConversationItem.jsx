@@ -1,11 +1,8 @@
 import { useEffect, useState } from 'react';
-import { downloadAttachment, getMessage } from '../../api';
-import { fileSize, senderName, shortDate } from '../../format';
+import { getMessage } from '../../api';
+import { senderName, shortDate } from '../../format';
 import { preloadEmailHtml, useEmailHtml } from './useEmailHtml';
-import { useLoadImages } from '../settings/loadImages';
-import { hasWebImages } from './webImages';
-import PlainBody from './PlainBody';
-import EmailHtml from './EmailHtml';
+import EmailContent from './EmailContent';
 
 // One email of a conversation: a row (who it's from, the start of its text,
 // when) that opens in place to show the whole email, and closes again.
@@ -42,9 +39,6 @@ function ConversationItem({ email, main = false, hideQuoted, onOpen }) {
 function ConversationEmail({ id, hideQuoted, onOpen }) {
   const [details, setDetails] = useState(null); // the full email, or { error }
   const formatted = useEmailHtml(id);
-  const loadImagesSetting = useLoadImages();
-  const [showImages, setShowImages] = useState(false);
-  const loadImages = loadImagesSetting || showImages;
 
   useEffect(() => {
     let cancelled = false;
@@ -57,44 +51,15 @@ function ConversationEmail({ id, hideQuoted, onOpen }) {
   if (!details) return <div className="conversation-body"><div className="email-html-loading">Loading email...</div></div>;
   if (details.error) return <div className="conversation-body"><p className="form-error">{details.error}</p></div>;
 
-  // images shown inside the email aren't listed again
-  const attachments = (details.attachments || []).filter(a => !formatted.inlinePartIds.includes(a.external_id));
-
   return (
     <div className="conversation-body">
-      <div className="conversation-meta">
-        <div>
-          {details.sender} · {new Date(details.received_at).toLocaleString()}
-          <div className="meta-recipients">To: {details.to_recipients || '(nobody)'}</div>
-          {details.cc_recipients && <div className="meta-recipients">Cc: {details.cc_recipients}</div>}
-        </div>
-        {onOpen && <button type="button" className="btn btn-ghost btn-small" onClick={onOpen}>Open</button>}
-      </div>
-      {attachments.length > 0 && (
-        <ul className="attachments">
-          {attachments.map(a => (
-            <li key={a.id}>
-              <button type="button" onClick={() => downloadAttachment(a).catch(err => window.alert(err.message))}>
-                <span className="attachment-name">{a.filename || '(unnamed attachment)'}</span>
-                <span className="attachment-size">{fileSize(a.size_bytes)}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {!loadImages && hasWebImages(formatted.html) && (
-        <div className="images-hidden">
-          <span>Images from the web are hidden.</span>
-          <button type="button" className="btn btn-ghost btn-small" onClick={() => setShowImages(true)}>Show images</button>
-        </div>
-      )}
-      {formatted.html ? (
-        <EmailHtml html={formatted.html} loadImages={loadImages} hideQuoted={hideQuoted} />
-      ) : formatted.status === 'loading' ? (
-        <div className="email-html-loading">Loading email...</div>
-      ) : (
-        <PlainBody text={formatted.text || details.body || details.snippet} hideQuoted={hideQuoted} />
-      )}
+      <EmailContent
+        message={details}
+        formatted={formatted}
+        metaClassName="conversation-meta"
+        metaAction={onOpen && <button type="button" className="btn btn-ghost btn-small" onClick={onOpen}>Open</button>}
+        hideQuoted={hideQuoted}
+      />
     </div>
   );
 }

@@ -64,3 +64,31 @@ export function timeLeft(isoString, now = Date.now()) {
 export function resultsText(count, query, more = false) {
   return `${count}${more ? '+' : ''} result${count === 1 && !more ? '' : 's'} for "${query}"`;
 }
+
+// ---------- picking a time (reminders, Send later) ----------
+
+// `hour` o'clock, `daysAhead` days after `base`.
+export function atHour(base, daysAhead, hour) {
+  const date = new Date(base);
+  date.setDate(date.getDate() + daysAhead);
+  date.setHours(hour, 0, 0, 0);
+  return date;
+}
+
+// 1 to 7: the coming Monday, never today.
+export function daysUntilMonday(date) {
+  return ((8 - date.getDay()) % 7) || 7;
+}
+
+// The next full hour, where time pickers start.
+export function nextFullHour(now = new Date()) {
+  const date = new Date(now);
+  date.setHours(date.getHours() + 1, 0, 0, 0);
+  return date;
+}
+
+// A Date as a datetime-local input's value: local "YYYY-MM-DDTHH:mm".
+export function toDateTimeInput(date) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}

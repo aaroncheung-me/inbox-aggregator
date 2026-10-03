@@ -8,16 +8,8 @@ import { accountsSummary } from '../../format';
 // "+ Add account" beside it. Tapping the heading opens a panel above it with the
 // accounts, temp addresses, Settings and sign-out.
 // (Sync now sits above the list, beside Received | Sent.)
-function PhoneAccountsBar({
-  accounts,
-  onToggleAccount,
-  onChangeColor,
-  onAccountConnected,
-  userEmail,
-  tempAddresses = null,
-  onSignOut,
-  onOpenSettings,
-}) {
+// user: { email, onSignOut, onOpenSettings }.
+function PhoneAccountsBar({ accounts, onToggleAccount, onChangeColor, onAccountConnected, tempAddresses = null, user }) {
   const [expanded, setExpanded] = useState(false);
   const [creatingTemp, setCreatingTemp] = useState(false);
   const tempCount = tempAddresses?.temp?.addresses.length || 0;
@@ -31,10 +23,10 @@ function PhoneAccountsBar({
             <TempAddresses {...tempAddresses} creating={creatingTemp} onCloseForm={() => setCreatingTemp(false)} />
           )}
           <div className="phone-bar-row">
-            <span className="signed-in-as" title={userEmail}>{userEmail}</span>
+            <span className="signed-in-as" title={user.email}>{user.email}</span>
             <span className="sidebar-footer-actions">
-              <button className="btn btn-ghost btn-small" onClick={() => { setExpanded(false); onOpenSettings(); }}>Settings</button>
-              <button className="btn btn-ghost btn-small" onClick={onSignOut}>Sign out</button>
+              <button className="btn btn-ghost btn-small" onClick={() => { setExpanded(false); user.onOpenSettings(); }}>Settings</button>
+              <button className="btn btn-ghost btn-small" onClick={user.onSignOut}>Sign out</button>
             </span>
           </div>
         </div>

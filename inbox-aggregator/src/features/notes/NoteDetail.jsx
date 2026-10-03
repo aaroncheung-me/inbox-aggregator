@@ -85,10 +85,6 @@ function NoteDetail({
     }
   }
 
-  function openPicker(kind) {
-    setPicker(kind);
-  }
-
   const reminder = note.reminder;
   const due = reminderIsDue(reminder, now);
   const linkedNoteIds = new Set(note.noteLinks.map(link => link.noteId));
@@ -113,9 +109,9 @@ function NoteDetail({
             <ActionMenu
               label="+ Add"
               items={[
-                { label: reminder ? 'Change reminder' : 'Reminder', onClick: () => openPicker('reminder') },
-                { label: 'Link email', onClick: () => openPicker('email') },
-                { label: 'Link note', onClick: () => openPicker('note') },
+                { label: reminder ? 'Change reminder' : 'Reminder', onClick: () => setPicker('reminder') },
+                { label: 'Link email', onClick: () => setPicker('email') },
+                { label: 'Link note', onClick: () => setPicker('note') },
                 !note.pin && { label: 'Pin', onClick: () => run(() => onAddAddon(note.id, { kind: 'pin' })) },
               ]}
             />
@@ -176,7 +172,7 @@ function NoteDetail({
                         onChange={e => run(() => onUpdateAddon(reminder.id, { done: e.target.checked }))}
                       />
                     </label>
-                    <button className="addon-chip-main" onClick={() => openPicker('reminder')} title="Change the time">
+                    <button className="addon-chip-main" onClick={() => setPicker('reminder')} title="Change the time">
                       Remind: {formatReminder(reminder.remind_at)}{due ? ' · due' : ''}
                     </button>
                     <AiTag addedBy={reminder.added_by} />

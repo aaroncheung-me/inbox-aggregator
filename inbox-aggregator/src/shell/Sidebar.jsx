@@ -1,5 +1,4 @@
 import AskBar from '../features/assistant/AskBar';
-import { askPlaceholders } from '../features/assistant/askPlaceholders';
 import SyncStatus from '../features/email/SyncStatus';
 import FolderSwitch from '../features/email/FolderSwitch';
 import PaneBar from '../ui/PaneBar';
@@ -14,85 +13,31 @@ import NotesPanel from '../features/notes/NotesPanel';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { PHONE_LAYOUT } from '../layout';
 
+// The sidebar: the ask bar, Inbox | Notes, and the list below them, with the
+// accounts and sign-out (desktop: above and below the list; phone: one bar
+// under it). Grouped by what they're for:
+// askBar: AskBar's props (mode, resetKey, placeholders, onAsk, onSearch...).
+// inbox: the email list, { folder, onFolderChange, messages, pinned, total,
+//   hasMore, loadingMore, onLoadMore, selectedId, onSelect, tempColors (temp
+//   address -> color, for its emails' stripes), scheduled, selectedScheduledId,
+//   onOpenScheduled, lastSyncedAt, onSync, syncing }.
+// search: the email search showing in the list's place ({ query, results,
+//   hasMore, loading, loadingMore, error, onClear, onLoadMore }), or null.
+// notesPanel: NotesPanel's props. accountsPanel: { accounts, onToggleAccount,
+//   onChangeColor, onAccountConnected, tempAddresses }. user: { email,
+//   onSignOut, onOpenSettings, settingsOpen }.
+// drafting: while an email is being written, { title, onBackToDraft,
+//   onDiscard, chat }: the Inbox | Notes row becomes "Writing: ...", the list
+//   becomes the email's assistant, and the ask box asks that assistant.
+// waitingDraft (phone): an email being written while something else shows, { title, onShow }.
 function Sidebar({
-  onAsk,
-  // desktop: folds the sidebar away (« at its top left)
-  onCollapse,
-  // the ask bar's AI | Search switch, and what empties its box (see AskBar)
-  askMode,
-  onAskModeChange,
-  askResetKey,
-  asking,
-  lastSyncedAt,
-  onSync,
-  syncing,
-  messages,
-  // temp address -> its color, for the stripes of the emails it received
-  tempColors,
-  pinned = [],
-  selectedId,
-  onSelect,
-  hasMore,
-  loadingMore,
-  onLoadMore,
-  total,
-  notice,
-  onDismissNotice,
-  accounts,
-  onToggleAccount,
-  onChangeAccountColor,
-  onAccountConnected,
-  userEmail,
-  onSignOut,
-  onOpenSettings,
-  settingsOpen,
-  search,
-  onSearch,
-  onClearSearch,
-  onLoadMoreSearch,
-  chatCount,
-  onOpenChat,
-  tab,
-  onTabChange,
-  dueCount,
-  notes,
-  now,
-  selectedNoteId,
-  onSelectNote,
-  onCreateNote,
-  onAiCreateNote,
-  onMoveNote,
-  onSuggestOrganizing,
-  onApplyOrganizing,
-  // a search on the Notes tab (null when none), and closing it
-  noteQuery = null,
-  onClearNoteQuery,
-  // phone: opens the full-screen new note
-  onStartNote,
-  creditsBanner,
-  focusAskBox = false,
-  focusNoteBox = false,
-  onNewEmail,
-  // temp addresses, shown under the accounts: { temp, now, onCreate, onExtend, onDelete }
-  tempAddresses = null,
-  folder,
-  onFolderChange,
-  // Send later emails not sent yet, in their own group above Sent
-  scheduled = [],
-  selectedScheduledId = null,
-  onOpenScheduled,
-  // while an email is being written: { title, onBackToDraft, onDiscard, chat }.
-  // The Inbox | Notes row becomes "Writing: ...", the list below becomes
-  // the email's assistant, and the ask box at the top asks that assistant.
-  drafting = null,
-  // phone: an email being written while something else shows, { title, onShow }
-  waitingDraft = null,
+  askBar, onNewEmail, onCollapse, creditsBanner, notice, onDismissNotice,
+  tab, onTabChange, dueCount, chatCount, onOpenChat,
+  inbox, search, notesPanel, accountsPanel, user, drafting = null, waitingDraft = null,
 }) {
-  // Desktop: sync status and accounts sit above the inbox list, sign-out below it.
-  // Phone: all of that folds into one bar under the list, so the list screen opens uncluttered.
   const isPhone = useMediaQuery(PHONE_LAYOUT);
-
-  const accountColors = new Map(accounts.map(a => [a.id, a.color]));
+  const accountColors = new Map(accountsPanel.accounts.map(a => [a.id, a.color]));
+  const rowProps = { accountColors, tempColors: inbox.tempColors, selectedId: inbox.selectedId, onSelect: inbox.onSelect };
 
   const noticeBanner = notice && (
     <div className={`notice notice-${notice.type}`} role="status">
@@ -105,7 +50,7 @@ function Sidebar({
     <>
       <ResultsBar
         backLabel={drafting ? 'Assistant' : 'Inbox'}
-        onBack={onClearSearch}
+        onBack={search.onClear}
         text={search.loading ? 'Searching...' : resultsText(search.results.length, search.query, search.hasMore)}
       />
       {search.error && <p className="search-empty">{search.error}</p>}
@@ -113,14 +58,11 @@ function Sidebar({
         <p className="search-empty">No emails match.</p>
       )}
       <MessageList
+        {...rowProps}
         messages={search.results}
-        accountColors={accountColors}
-        tempColors={tempColors}
-        selectedId={selectedId}
-        onSelect={onSelect}
         hasMore={search.hasMore}
         loadingMore={search.loadingMore}
-        onLoadMore={onLoadMoreSearch}
+        onLoadMore={search.onLoadMore}
         total={null}
       />
     </>
@@ -130,34 +72,68 @@ function Sidebar({
   // emails sit in their own group above Received, scheduled ones above Sent
   const folderList = (
     <>
-      {folder === 'sent' && scheduled.length > 0 && (
+      {inbox.folder === 'sent' && inbox.scheduled.length > 0 && (
         <>
           <div className="list-group-label">Scheduled</div>
-          <ScheduledList scheduled={scheduled} accountColors={accountColors} selectedId={selectedScheduledId} onSelect={onOpenScheduled} />
+          <ScheduledList scheduled={inbox.scheduled} accountColors={accountColors} selectedId={inbox.selectedScheduledId} onSelect={inbox.onOpenScheduled} />
           <div className="list-group-label">Sent</div>
         </>
       )}
-      {folder === 'inbox' && pinned.length > 0 && (
+      {inbox.folder === 'inbox' && inbox.pinned.length > 0 && (
         <>
           <div className="list-group-label">Pinned</div>
-          <MessageList messages={pinned} accountColors={accountColors} tempColors={tempColors} selectedId={selectedId} onSelect={onSelect} hasMore={false} />
+          <MessageList {...rowProps} messages={inbox.pinned} hasMore={false} />
           <div className="list-group-label">Received</div>
         </>
       )}
       <MessageList
-        messages={messages}
-        accountColors={accountColors}
-        tempColors={tempColors}
-        selectedId={selectedId}
-        onSelect={onSelect}
-        hasMore={hasMore}
-        loadingMore={loadingMore}
-        onLoadMore={onLoadMore}
-        total={total}
-        showRecipients={folder === 'sent'}
+        {...rowProps}
+        messages={inbox.messages}
+        hasMore={inbox.hasMore}
+        loadingMore={inbox.loadingMore}
+        onLoadMore={inbox.onLoadMore}
+        total={inbox.total}
+        showRecipients={inbox.folder === 'sent'}
       />
     </>
   );
+
+  let list;
+  if (drafting) {
+    // searching still works while writing; otherwise this is the email's assistant
+    list = searchList || drafting.chat;
+  } else if (tab === 'notes') {
+    list = (
+      <>
+        {noticeBanner}
+        <NotesPanel
+          {...notesPanel}
+          autoFocusComposer={notesPanel.autoFocusComposer && !isPhone}
+          onStartNote={isPhone ? notesPanel.onStartNote : undefined}
+        />
+      </>
+    );
+  } else if (search) {
+    // search results take the whole list's place, right under the bar
+    list = (
+      <>
+        {noticeBanner}
+        {searchList}
+      </>
+    );
+  } else {
+    list = (
+      <>
+        <div className="list-header">
+          <FolderSwitch folder={inbox.folder} onChange={inbox.onFolderChange} />
+          <SyncStatus lastSyncedAt={inbox.lastSyncedAt} onSync={inbox.onSync} syncing={inbox.syncing} />
+        </div>
+        {!isPhone && <AccountsPanel {...accountsPanel} />}
+        {noticeBanner}
+        {folderList}
+      </>
+    );
+  }
 
   return (
     <div className="sidebar">
@@ -173,16 +149,8 @@ function Sidebar({
           <button className="btn btn-ghost btn-small" onClick={drafting.onDiscard}>Discard</button>
         </PaneBar>
       )}
-      {/* while writing, Discard is in the writing screen's own bar */}
       <AskBar
-        mode={askMode}
-        onModeChange={onAskModeChange}
-        onAsk={onAsk}
-        onSearch={onSearch}
-        asking={asking}
-        autoFocus={focusAskBox}
-        placeholders={askPlaceholders({ drafting, tab })}
-        resetKey={askResetKey}
+        {...askBar}
         onCollapse={isPhone ? undefined : onCollapse}
         // New email; while writing it becomes Discard in the same spot (on a
         // phone, Discard is in this screen's bar above)
@@ -212,79 +180,22 @@ function Sidebar({
         <SidebarTabs tab={tab} onChange={onTabChange} dueCount={dueCount} />
       )}
 
-      <div className="sidebar-scroll">
-        {drafting ? (
-          // searching still works while writing; otherwise this is the email's assistant
-          searchList || drafting.chat
-        ) : tab === 'notes' ? (
-          <>
-            {noticeBanner}
-            <NotesPanel
-              notes={notes}
-              now={now}
-              selectedNoteId={selectedNoteId}
-              onSelect={onSelectNote}
-              onCreate={onCreateNote}
-              onAiCreate={onAiCreateNote}
-              onMove={onMoveNote}
-              onSuggestOrganizing={onSuggestOrganizing}
-              onApplyOrganizing={onApplyOrganizing}
-              autoFocusComposer={focusNoteBox && !isPhone}
-              query={noteQuery}
-              onClearQuery={onClearNoteQuery}
-              onStartNote={isPhone ? onStartNote : undefined}
-            />
-          </>
-        ) : search ? (
-          // search results take the whole list's place, right under the bar
-          <>
-            {noticeBanner}
-            {searchList}
-          </>
-        ) : (
-          <>
-            <div className="list-header">
-              <FolderSwitch folder={folder} onChange={onFolderChange} />
-              <SyncStatus lastSyncedAt={lastSyncedAt} onSync={onSync} syncing={syncing} />
-            </div>
-            {!isPhone && (
-              <AccountsPanel
-                accounts={accounts}
-                onToggleAccount={onToggleAccount}
-                onChangeColor={onChangeAccountColor}
-                onAccountConnected={onAccountConnected}
-                tempAddresses={tempAddresses}
-              />
-            )}
-            {noticeBanner}
-            {folderList}
-          </>
-        )}
-      </div>
+      <div className="sidebar-scroll">{list}</div>
 
       {isPhone ? (
-        <PhoneAccountsBar
-          accounts={accounts}
-          onToggleAccount={onToggleAccount}
-          onChangeColor={onChangeAccountColor}
-          onAccountConnected={onAccountConnected}
-          userEmail={userEmail}
-          onSignOut={onSignOut}
-          onOpenSettings={onOpenSettings}
-          tempAddresses={tempAddresses}
-        />
+        <PhoneAccountsBar {...accountsPanel} user={user} />
       ) : (
         <div className="sidebar-footer">
-          <span className="signed-in-as" title={userEmail}>{userEmail}</span>
+          <span className="signed-in-as" title={user.email}>{user.email}</span>
           <span className="sidebar-footer-actions">
             <button
-              className={`btn btn-ghost btn-small settings-button${settingsOpen ? ' active' : ''}`}
-              onClick={onOpenSettings}
-              aria-pressed={settingsOpen}
+              className={`btn btn-ghost btn-small settings-button${user.settingsOpen ? ' active' : ''}`}
+              onClick={user.onOpenSettings}
+              aria-pressed={user.settingsOpen}
             >
               Settings
             </button>
-            <button className="btn btn-ghost btn-small" onClick={onSignOut}>Sign out</button>
+            <button className="btn btn-ghost btn-small" onClick={user.onSignOut}>Sign out</button>
           </span>
         </div>
       )}

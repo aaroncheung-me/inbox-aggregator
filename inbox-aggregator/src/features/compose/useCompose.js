@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { askAssistant, deleteNote, getReplyInfo, sendEmail, getSendStatus, cancelSend, uploadAttachment, takeBackScheduled } from '../../api';
-import { applyProgress, markNoteUndone } from '../assistant/useChat';
+import { getReplyInfo, sendEmail, getSendStatus, cancelSend, uploadAttachment, takeBackScheduled } from '../../api';
+import { useChat } from '../assistant/useChat';
 import {
   newDraft,
   draftFromMessage,
@@ -21,14 +21,11 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Whether the draft is on screen belongs to navigation (showDraft/hideDraft),
 // since the assistant beside it can open emails and notes in its place.
 // onScheduled: reloads the Scheduled list after scheduling or taking one back.
-export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDraft, showListScreen, reloadMessages, refreshNotes, refreshStatus, onScheduled }) {
+// onNoteDeleted: as for useChat, for notes its assistant made and then undid.
+export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDraft, showListScreen, reloadMessages, refreshNotes, refreshStatus, onNoteDeleted, onScheduled }) {
   const [draft, setDraft] = useState(null);
-  const [chat, setChat] = useState([]);
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatPending, setChatPending] = useState(null);
-  const [chatError, setChatError] = useState(null);
-  // bumped whenever a draft opens or closes, so a late answer about an old one is dropped
-  const session = useRef(0);
+  // the draft's own assistant; it starts over with each draft, dropping any late answer about the old one
+  const chat = useChat({ refreshNotes, refreshStatus, onNoteDeleted });
   const [sending, setSending] = useState(false);
   // the email just sent, until it's confirmed: { id, sendAt, draft, chat, status, error, undoError }
   const [outgoing, setOutgoing] = useState(null);
@@ -42,24 +39,16 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
   // text in it, unless the caller already has (force).
   function open(next, withChat = [], force = false) {
     if (!force && draft && draftHasContent(draft) && !window.confirm('Discard the email you are writing?')) return false;
-    session.current++;
     setDraft(next);
-    setChat(withChat);
-    setChatError(null);
-    setChatLoading(false);
-    setChatPending(null);
+    chat.reset(withChat);
     showDraft();
     return true;
   }
 
   function close() {
-    session.current++;
     setDraft(null);
     hideDraft();
-    setChat([]);
-    setChatError(null);
-    setChatLoading(false);
-    setChatPending(null);
+    chat.reset();
   }
 
   // One email is written at a time: with one already started, this goes back to it.
@@ -163,13 +152,13 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
       const { id } = queued;
       if (queued.scheduled) {
         // nothing to follow: the bar says when it goes, with Undo, for a while
-        setOutgoing({ id, sendAt: queued.sendAt, draft: sent, chat, status: 'scheduled', error: null, undoError: null });
+        setOutgoing({ id, sendAt: queued.sendAt, draft: sent, chat: chat.history, status: 'scheduled', error: null, undoError: null });
         close();
         onScheduled();
         setTimeout(() => setOutgoing(prev => (prev?.id === id && prev.status === 'scheduled' ? null : prev)), 10000);
         return;
       }
-      setOutgoing({ id, sendAt: queued.sendAt, draft: sent, chat, status: 'waiting', error: null, undoError: null });
+      setOutgoing({ id, sendAt: queued.sendAt, draft: sent, chat: chat.history, status: 'waiting', error: null, undoError: null });
       close();
       followSend(id, queued.sendAt);
     } catch (err) {
@@ -246,47 +235,26 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
 
   // The assistant beside the writing screen. It gets the draft as it stands,
   // and returns a suggested draft only when asked for one.
-  async function ask(question) {
+  function ask(question) {
     if (!draft) return;
-    const askedIn = session.current;
-    setChatLoading(true);
-    setChatError(null);
-    setChatPending({ question, steps: [], text: '' });
-    try {
-      const earlier = chat.map(({ question: q, answer }) => ({ question: q, answer }));
-      const result = await askAssistant(question, earlier, {
-        draft: {
-          mode: draft.mode,
-          from: accounts.find(a => a.id === draft.accountId)?.email_address || '',
-          to: draft.to,
-          cc: draft.showCcBcc ? draft.cc : '',
-          subject: draft.subject,
-          body: draft.body,
-          replyToMessageId: draft.originalMessageId,
-        },
-        onProgress: event => {
-          if (askedIn === session.current) setChatPending(prev => applyProgress(prev, event));
-        },
-      });
-      if (askedIn !== session.current) return;
-      setChat(prev => [...prev, { question, ...result }]);
-      if (result.createdNotes?.length) await refreshNotes();
-    } catch (err) {
-      if (askedIn === session.current) setChatError(err.message);
-    } finally {
-      if (askedIn === session.current) {
-        setChatLoading(false);
-        setChatPending(null);
-      }
-      refreshStatus();
-    }
+    chat.ask(question, {
+      draft: {
+        mode: draft.mode,
+        from: accounts.find(a => a.id === draft.accountId)?.email_address || '',
+        to: draft.to,
+        cc: draft.showCcBcc ? draft.cc : '',
+        subject: draft.subject,
+        body: draft.body,
+        replyToMessageId: draft.originalMessageId,
+      },
+    });
   }
 
   // Puts the assistant's draft into the email, with the signature kept under
   // it. What the user had before is kept (from before the first AI draft), so
   // Undo always returns to their own text.
   function applyAiDraft(exchangeIndex) {
-    const suggestion = chat[exchangeIndex]?.draft;
+    const suggestion = chat.history[exchangeIndex]?.draft;
     if (!suggestion || !draft) return;
     setDraft(prev => ({
       ...prev,
@@ -295,19 +263,13 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
       aiPrevious: prev.aiPrevious || { body: prev.body, subject: prev.subject },
       error: null,
     }));
-    setChat(prev => prev.map((exchange, i) => ({ ...exchange, draftUsed: i === exchangeIndex })));
+    chat.setHistory(prev => prev.map((exchange, i) => ({ ...exchange, draftUsed: i === exchangeIndex })));
     showDraft();
   }
 
   function undoAiDraft() {
     setDraft(prev => (prev?.aiPrevious ? { ...prev, ...prev.aiPrevious, aiPrevious: null } : prev));
-    setChat(prev => prev.map(exchange => ({ ...exchange, draftUsed: false })));
-  }
-
-  async function undoChatNote(exchangeIndex, noteId) {
-    await deleteNote(noteId);
-    setChat(prev => markNoteUndone(prev, exchangeIndex, noteId));
-    await refreshNotes();
+    chat.setHistory(prev => prev.map(exchange => ({ ...exchange, draftUsed: false })));
   }
 
   // closing the tab or app with an unsent draft asks first
@@ -322,9 +284,6 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
   return {
     draft,
     chat,
-    chatLoading,
-    chatPending,
-    chatError,
     sending,
     outgoing,
     newEmail,
@@ -340,7 +299,6 @@ export function useCompose({ accounts, openMessage, onNotice, showDraft, hideDra
     ask,
     applyAiDraft,
     undoAiDraft,
-    undoChatNote,
     editScheduled,
   };
 }

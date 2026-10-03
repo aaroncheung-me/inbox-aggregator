@@ -5,8 +5,10 @@ import ChatPanel from '../assistant/ChatPanel';
 // ask box at the top). It can search the inbox and notes like the main
 // assistant, and writes drafts only when asked. A draft shows with "Use this
 // draft"; nothing goes into the email until that's pressed.
-function DraftAssistant({ history, loading, pending, error, onUseDraft, onOpenMessage, onOpenNote, onUndoCreatedNote }) {
+// chat: the draft's useChat.
+function DraftAssistant({ chat, onUseDraft, onOpenMessage, onOpenNote }) {
   const chatEnd = useRef(null);
+  const { history, loading, pending } = chat;
 
   // keeps the newest answer in view
   useEffect(() => {
@@ -20,10 +22,10 @@ function DraftAssistant({ history, loading, pending, error, onUseDraft, onOpenMe
         loading={loading}
         pending={pending}
         workingLabel="Working on it..."
-        error={error}
+        error={chat.error}
         onOpenMessage={onOpenMessage}
         onOpenNote={onOpenNote}
-        onUndoCreatedNote={onUndoCreatedNote}
+        onUndoCreatedNote={chat.undoCreatedNote}
         onUseDraft={onUseDraft}
         emptyContent={(
           <>

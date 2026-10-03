@@ -16,7 +16,7 @@ function ActionMenu({ label, items, className = '', arrow = true, ariaLabel, but
   const [position, setPosition] = useState(null); // fixed-position style while open, else null
   const open = position !== null;
   const ref = useRef(null);
-  useDismiss(ref, open, isOpen => { if (!isOpen) setPosition(null); });
+  useDismiss(ref, open, () => setPosition(null));
 
   // it would drift away from its button if the page scrolled underneath
   useEffect(() => {
