@@ -1,6 +1,8 @@
 // The button for a useVoiceRecorder: "Voice" to start, "Stop 0:12" while
 // recording, then a label for whatever happens next (e.g. "Saving...").
 function VoiceButton({ recorder, workingLabel = 'Working...', disabled = false, className = '' }) {
+  // the public demo has no server to transcribe with (see src/demo/)
+  if (import.meta.env.MODE === 'demo') return null;
   const seconds = Math.floor(recorder.elapsed / 1000);
   const label = recorder.state === 'recording'
     ? `Stop ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
